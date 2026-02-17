@@ -1,0 +1,12 @@
+title: RevealNotes
+author:  Felix Boy
+version: 1.0.0
+quarto-required: ">=1.8.000"
+contributes:
+  revealjs-plugins:
+    - name: RevealRevealNotes
+      script:
+        - revealNotes.js
+      stylesheet:
+        - revealNotes.css
+
