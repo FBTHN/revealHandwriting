@@ -30,7 +30,7 @@
 *******************************************************************/
 
 window.RevealNotes = window.RevealNotes || {
-    id: 'RevealNotes',
+    id: 'RevealRevealNotes',
     init: function (deck) {
         initNotes(deck);
     }
