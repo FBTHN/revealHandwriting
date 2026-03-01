@@ -1,10 +1,9 @@
 # RevealNotes Extension For Quarto
 
-_TODO_: Add a short description of your extension.
+Plugin to provide for handwriting notes directly on the slides with pen in different colors,
+marker, eraser and lasso select function. Writing with pen only, tested on windows and android (not yet on ipad or mac)
 
 ## Installing
-
-_TODO_: Replace the `<github-organization>` with your GitHub organization.
 
 ```bash
 quarto add FBTHN/revealHandwriting
@@ -15,7 +14,8 @@ If you're using version control, you will want to check in this directory.
 
 ## Using
 
-_TODO_: Describe how to use your extension.
+add the extension to your reveal.js presentation. a drawing menu will appear on the lower left and 
+pen drawing is enabled.
 
 ## Example
 
