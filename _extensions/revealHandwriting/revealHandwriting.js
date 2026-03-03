@@ -926,6 +926,10 @@ box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 transition: all 0.3s ease-in-out;
 }
 
+.print-pdf #notes-tool-container {
+  display: none !important;
+}
+  
 #notes-tool-container > *:not(:first-child) {
 opacity: 0;
 max-width: 0;
