@@ -3,7 +3,7 @@
 **
 ** A plugin for reveal.js adding a handwriting canvas.
 **
-** Version: 1.1.1
+** Version: 1.1.2
 **
 ** License: MIT license
 **
@@ -43,22 +43,20 @@ const initHandwriting = function (Reveal) {
     let isLassoing = false;
     let isMovingSelection = false;
     let isDraggingSelection = false;
-    let wasPenButtonDown = false;
     let penStyleLock = false;
     let penSession = false;
 
-    let currentPathElement = null;
+    // Advanced structured caching for variable-width strokes
+    let currentStrokeGroup = null;
+    let dynamicTailPath = null;
     let currentPoints = [];
     let pendingPoints = [];
-
-    let cachedPathData = "";
     let lastProcessedIndex = 0;
 
     let currentSlideGroup = null;
     let lassoPoints = [];
     let selectedElements = [];
     let selectionTransform = { x: 0, y: 0 };
-
     let dragStartPos = { x: 0, y: 0 };
 
     let currentTool = 'pen';
@@ -66,7 +64,7 @@ const initHandwriting = function (Reveal) {
 
     let strokeWidths = {
         'pen': 3,
-        'marker': 10
+        'marker': 15 // Made slightly wider to better show tilt/pressure
     };
 
     let toolTipElement;
@@ -80,12 +78,52 @@ const initHandwriting = function (Reveal) {
     const SAVE_ICON = `<svg viewBox="0 0 24 24"><path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zM15 9H5V5h10v4z"/></svg>`;
     const SVG_NS = "http://www.w3.org/2000/svg";
 
+    // --- Core Pressure & Tilt Calculation ---
+    function calculateWidth(pressure, tiltX, tiltY) {
+        const baseWidth = strokeWidths[currentTool] || 3;
+        if (currentTool === 'marker') {
+            // Marker reacts heavily to tilt magnitude (like a flat tip)
+            const tiltMag = Math.sqrt(tiltX * tiltX + tiltY * tiltY) / 90;
+            return baseWidth * (0.4 + pressure * 0.4 + tiltMag * 0.6);
+        } else {
+            // Pen reacts heavily to downward pressure
+            return baseWidth * (0.2 + pressure * 1.5);
+        }
+    }
 
+    // --- Fast Draw segment Generation ---
+    function createSegment(p0, p1, p2, isLine = false) {
+        const midX = isLine ? p2.x : (p1.x + p2.x) / 2;
+        const midY = isLine ? p2.y : (p1.y + p2.y) / 2;
+
+        // Midpoint data for smooth width calculation
+        const midP = (p1.p + p2.p) / 2;
+        const midTx = (p1.tx + p2.tx) / 2;
+        const midTy = (p1.ty + p2.ty) / 2;
+
+        let startX = p0.x, startY = p0.y;
+        if (!isLine && p0 !== p1) {
+            startX = (p0.x + p1.x) / 2;
+            startY = (p0.y + p1.y) / 2;
+        }
+
+        const segment = document.createElementNS(SVG_NS, "path");
+        const d = isLine
+            ? `M ${startX.toFixed(2)} ${startY.toFixed(2)} L ${midX.toFixed(2)} ${midY.toFixed(2)}`
+            : `M ${startX.toFixed(2)} ${startY.toFixed(2)} Q ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} ${midX.toFixed(2)} ${midY.toFixed(2)}`;
+
+        segment.setAttribute("d", d);
+        segment.setAttribute("stroke-width", calculateWidth(midP, midTx, midTy).toFixed(2));
+        return { segment, midX, midY };
+    }
+
+    // -------------------------------------------------------------
+    // LIGHTWEIGHT DRAW LOOP (For real-time 0-lag drawing)
+    // -------------------------------------------------------------
     const drawLoop = () => {
-        if (!isDrawing || !currentPathElement) return;
+        if (!isDrawing || !currentStrokeGroup) return;
 
         if (pendingPoints.length > 0) {
-
             for (let i = 0; i < pendingPoints.length; i++) {
                 const p = pendingPoints[i];
                 const lastPoint = currentPoints[currentPoints.length - 1];
@@ -93,7 +131,7 @@ const initHandwriting = function (Reveal) {
                 if (lastPoint) {
                     const dx = p.x - lastPoint.x;
                     const dy = p.y - lastPoint.y;
-
+                    // Ignore points less than ~1.4px away to thin the path naturally
                     if (dx * dx + dy * dy > 2) {
                         currentPoints.push(p);
                     }
@@ -103,128 +141,53 @@ const initHandwriting = function (Reveal) {
             }
             pendingPoints = [];
 
-
+            // Fast Midpoint Algorithm writing directly to DOM Elements
             while (lastProcessedIndex < currentPoints.length - 2) {
+                const p0 = currentPoints[lastProcessedIndex];
                 const p1 = currentPoints[lastProcessedIndex + 1];
                 const p2 = currentPoints[lastProcessedIndex + 2];
-                const midX = (p1.x + p2.x) / 2;
-                const midY = (p1.y + p2.y) / 2;
 
+                const { segment } = createSegment(p0, p1, p2);
+                currentStrokeGroup.insertBefore(segment, dynamicTailPath);
 
-                cachedPathData += ` Q ${p1.x.toFixed(1)} ${p1.y.toFixed(1)} ${midX.toFixed(1)} ${midY.toFixed(1)}`;
                 lastProcessedIndex++;
             }
 
-
-            let dynamicTail = "";
+            // Draw a temporary straight line tail to the literal mouse position
             const n = currentPoints.length;
             if (n > 1) {
-                const lastP = currentPoints[n - 1];
-                dynamicTail = ` L ${lastP.x.toFixed(1)} ${lastP.y.toFixed(1)}`;
-            }
+                const pEnd = currentPoints[n - 1];
+                const pPrev = currentPoints[Math.max(0, n - 2)];
+                const startX = (pPrev.x + pEnd.x) / 2;
+                const startY = (pPrev.y + pEnd.y) / 2;
 
-            currentPathElement.setAttribute('d', cachedPathData + dynamicTail);
+                dynamicTailPath.setAttribute("d", `M ${startX.toFixed(2)} ${startY.toFixed(2)} L ${pEnd.x.toFixed(2)} ${pEnd.y.toFixed(2)}`);
+                dynamicTailPath.setAttribute("stroke-width", calculateWidth(pEnd.p, pEnd.tx, pEnd.ty).toFixed(2));
+            }
         }
 
         requestAnimationFrame(drawLoop);
     };
 
-
-    function smoothMovingAverage(points, win = 3) {
-        if (points.length <= 2 || win < 3 || win % 2 === 0) return points.slice();
-        const half = (win - 1) / 2;
+    // -------------------------------------------------------------
+    // VERY LIGHT POST-STROKE SMOOTHING (Applied only when pen lifts)
+    // -------------------------------------------------------------
+    function applyLightSmoothingToPoints(points, win = 3) {
+        if (points.length <= 2) return points.slice();
+        const half = Math.floor(win / 2);
         const out = [];
         for (let i = 0; i < points.length; i++) {
-            let sx = 0, sy = 0, cnt = 0;
+            let sx = 0, sy = 0, sp = 0, stx = 0, sty = 0, cnt = 0;
             for (let k = -half; k <= half; k++) {
                 const idx = Math.min(points.length - 1, Math.max(0, i + k));
-                sx += points[idx].x; sy += points[idx].y; cnt++;
+                sx += points[idx].x; sy += points[idx].y;
+                sp += points[idx].p; stx += points[idx].tx; sty += points[idx].ty;
+                cnt++;
             }
-            out.push({ x: sx / cnt, y: sy / cnt });
+            out.push({ x: sx / cnt, y: sy / cnt, p: sp / cnt, tx: stx / cnt, ty: sty / cnt });
         }
         return out;
     }
-
-    function pointLineDist(p, a, b) {
-        const vx = b.x - a.x, vy = b.y - a.y;
-        const wx = p.x - a.x, wy = p.y - a.y;
-        const c1 = vx * wx + vy * wy;
-        if (c1 <= 0) return Math.hypot(wx, wy);
-        const c2 = vx * vx + vy * vy;
-        if (c2 <= c1) return Math.hypot(p.x - b.x, p.y - b.y);
-        const t = c1 / c2;
-        const px = a.x + t * vx, py = a.y + t * vy;
-        return Math.hypot(p.x - px, p.y - py);
-    }
-
-    function rdpSimplify(points, epsilon) {
-        if (points.length < 3) return points.slice();
-
-        let dmax = 0, index = 0;
-        const end = points.length - 1;
-        for (let i = 1; i < end; i++) {
-            const d = pointLineDist(points[i], points[0], points[end]);
-            if (d > dmax) { index = i; dmax = d; }
-        }
-
-        if (dmax > epsilon) {
-            const rec1 = rdpSimplify(points.slice(0, index + 1), epsilon);
-            const rec2 = rdpSimplify(points.slice(index), epsilon);
-            return rec1.slice(0, -1).concat(rec2);
-        } else {
-            return [points[0], points[end]];
-        }
-    }
-
-    function buildCardinalBezierPath(points, tension = 0.2) {
-        const n = points.length;
-        if (n === 0) return '';
-        if (n === 1) return `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
-        if (n === 2) {
-            const p0 = points[0], p1 = points[1];
-            return `M ${p0.x.toFixed(2)} ${p0.y.toFixed(2)} L ${p1.x.toFixed(2)} ${p1.y.toFixed(2)}`;
-        }
-
-        const k = (1 - tension) / 6;
-        let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
-
-        for (let i = 0; i < n - 1; i++) {
-            const p0 = i === 0 ? points[0] : points[i - 1];
-            const p1 = points[i];
-            const p2 = points[i + 1];
-            const p3 = i + 2 < n ? points[i + 2] : points[n - 1];
-
-            const c1x = p1.x + (p2.x - p0.x) * k;
-            const c1y = p1.y + (p2.y - p0.y) * k;
-            const c2x = p2.x - (p3.x - p1.x) * k;
-            const c2y = p2.y - (p3.y - p1.y) * k;
-
-            d += ` C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
-        }
-
-        return d;
-    }
-
-    function applyVeryLightSmoothing(points, strokeWidth) {
-        const movingAvgWindow = 3;
-        const epsilonFactor = 0.15;
-        const tension = 0.3;
-
-        if (!points || points.length < 3) {
-            if (!points || points.length === 0) return '';
-            if (points.length === 1) return `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
-            return `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)} L ${points[1].x.toFixed(2)} ${points[1].y.toFixed(2)}`;
-        }
-
-        let pts = points.slice();
-        pts = smoothMovingAverage(pts, movingAvgWindow);
-
-        const epsilon = Math.max(0.5, (strokeWidth || 3) * epsilonFactor);
-        pts = rdpSimplify(pts, epsilon);
-
-        return buildCardinalBezierPath(pts, tension);
-    }
-
 
     const getToolIcon = (tool) => {
         switch (tool) {
@@ -248,6 +211,21 @@ const initHandwriting = function (Reveal) {
             }
         } catch (e) { }
         return { x, y };
+    };
+
+    // Extracts normalized coordinates + pressure/tilt
+    const getPointData = (ev) => {
+        const svgPoint = getPointInSvg(ev.clientX, ev.clientY);
+        let p = ev.pressure !== undefined ? ev.pressure : 0.5;
+        if (p === 0 && ev.pointerType !== 'pen') p = 0.5;
+
+        return {
+            x: svgPoint.x,
+            y: svgPoint.y,
+            p: p,
+            tx: ev.tiltX || 0,
+            ty: ev.tiltY || 0
+        };
     };
 
     Reveal.on('ready', event => {
@@ -434,9 +412,12 @@ const initHandwriting = function (Reveal) {
     function eraseAt(x, y) {
         showTooltipIcon(x, y, ERASER_ICON_SVG, 200);
         const element = document.elementFromPoint(x, y);
-        if (element && (element.tagName === 'path' || element.tagName === 'circle') && element.closest('.slide-drawing') === currentSlideGroup) {
-            if (element.getAttribute('id') === 'current-lasso') return;
-            element.remove();
+        if (element) {
+            const group = element.closest('g.stroke-group, circle.dot');
+            if (group && group.closest('.slide-drawing') === currentSlideGroup) {
+                if (group.id === 'current-lasso') return;
+                group.remove();
+            }
         }
     }
 
@@ -444,43 +425,41 @@ const initHandwriting = function (Reveal) {
         if (lassoPoints.length < 3) return;
 
         selectedElements = [];
-        const children = Array.from(currentSlideGroup.querySelectorAll('path, circle'));
-        const SAMPLE_STEP = 10;
+        const groups = Array.from(currentSlideGroup.querySelectorAll('g.stroke-group, circle.dot'));
 
-        children.forEach(el => {
-            if (el.id === 'current-lasso') return;
+        groups.forEach(group => {
+            if (group.id === 'current-lasso') return;
 
-            if (el.tagName === 'path') {
-                const length = el.getTotalLength();
-                let isFullyInside = true;
-                for (let i = 0; i <= length; i += SAMPLE_STEP) {
-                    const p = el.getPointAtLength(i);
-                    if (!isPointInPolygon(p, lassoPoints)) {
-                        isFullyInside = false;
-                        break;
-                    }
+            if (group.tagName === 'circle') {
+                const cx = parseFloat(group.getAttribute('cx'));
+                const cy = parseFloat(group.getAttribute('cy'));
+                if (isPointInPolygon({ x: cx, y: cy }, lassoPoints)) {
+                    selectedElements.push(group);
+                    group.classList.add('selected-stroke');
+                    group.style.fill = "#ff0000";
+                    group.style.opacity = "0.7";
                 }
-                if (isFullyInside) {
-                    const endP = el.getPointAtLength(length);
-                    if (!isPointInPolygon(endP, lassoPoints)) {
-                        isFullyInside = false;
-                    }
+            } else {
+                // If it's a stroke group, sample its paths
+                const paths = Array.from(group.querySelectorAll('path'));
+                if (paths.length === 0) return;
+
+                let isInside = true;
+                for (let i = 0; i < paths.length; i += Math.max(1, Math.floor(paths.length / 5))) {
+                    try {
+                        const pt = paths[i].getPointAtLength(0);
+                        if (!isPointInPolygon(pt, lassoPoints)) {
+                            isInside = false;
+                            break;
+                        }
+                    } catch (e) { }
                 }
-                if (isFullyInside) {
-                    selectedElements.push(el);
-                    el.classList.add('selected-stroke');
-                    el.style.stroke = "#ff0000";
-                    el.style.opacity = "0.7";
-                }
-            } else if (el.tagName === 'circle') {
-                const cx = parseFloat(el.getAttribute('cx'));
-                const cy = parseFloat(el.getAttribute('cy'));
-                const centerPoint = { x: cx, y: cy };
-                if (isPointInPolygon(centerPoint, lassoPoints)) {
-                    selectedElements.push(el);
-                    el.classList.add('selected-stroke');
-                    el.style.fill = "#ff0000";
-                    el.style.opacity = "0.7";
+
+                if (isInside) {
+                    selectedElements.push(group);
+                    group.classList.add('selected-stroke');
+                    group.style.stroke = "#ff0000";
+                    group.style.opacity = "0.7";
                 }
             }
         });
@@ -505,10 +484,10 @@ const initHandwriting = function (Reveal) {
         selectedElements.forEach(el => {
             el.classList.remove('selected-stroke');
 
-            if (el.tagName === 'path') {
-                el.style.stroke = "";
-            } else if (el.tagName === 'circle') {
+            if (el.tagName === 'circle') {
                 el.style.fill = "";
+            } else {
+                el.style.stroke = ""; // reset group stroke override
             }
 
             el.style.opacity = "";
@@ -574,11 +553,11 @@ const initHandwriting = function (Reveal) {
             absorbPenEvents(e);
             svg.style.pointerEvents = "all";
 
-            const svgPoint = getPointInSvg(e.clientX, e.clientY);
+            const pData = getPointData(e);
 
             if (isMovingSelection) {
                 isDraggingSelection = true;
-                dragStartPos = { x: svgPoint.x, y: svgPoint.y };
+                dragStartPos = { x: pData.x, y: pData.y };
                 svg.setPointerCapture(e.pointerId);
                 return;
             }
@@ -597,46 +576,48 @@ const initHandwriting = function (Reveal) {
             } else if (currentTool === 'lasso' || isLassoButton) {
                 isLassoing = true;
                 clearSelection();
-                lassoPoints = [svgPoint];
+                lassoPoints = [{ x: pData.x, y: pData.y }];
                 showTooltipIcon(e.clientX, e.clientY, LASSO_ICON_SVG, 200);
 
-                currentPathElement = document.createElementNS(SVG_NS, "path");
-                currentPathElement.setAttribute("id", "current-lasso");
-                currentPathElement.setAttribute("stroke", "#555");
-                currentPathElement.setAttribute("stroke-width", "2");
-                currentPathElement.setAttribute("stroke-dasharray", "5,5");
-                currentPathElement.setAttribute("fill", "rgba(0,0,0,0.05)");
-                currentPathElement.setAttribute("d", `M ${svgPoint.x} ${svgPoint.y}`);
-                svg.appendChild(currentPathElement);
+                let currentLassoElement = document.createElementNS(SVG_NS, "path");
+                currentLassoElement.setAttribute("id", "current-lasso");
+                currentLassoElement.setAttribute("stroke", "#555");
+                currentLassoElement.setAttribute("stroke-width", "2");
+                currentLassoElement.setAttribute("stroke-dasharray", "5,5");
+                currentLassoElement.setAttribute("fill", "rgba(0,0,0,0.05)");
+                currentLassoElement.setAttribute("d", `M ${pData.x} ${pData.y}`);
+                svg.appendChild(currentLassoElement);
             } else {
                 clearSelection();
                 isDrawing = true;
 
-                currentPoints = [{ x: svgPoint.x, y: svgPoint.y }];
+                currentPoints = [pData];
                 pendingPoints = [];
-                cachedPathData = `M ${svgPoint.x.toFixed(1)} ${svgPoint.y.toFixed(1)}`;
                 lastProcessedIndex = 0;
 
-                currentPathElement = document.createElementNS(SVG_NS, "path");
-                currentPathElement.style.pointerEvents = "all";
-                currentPathElement.setAttribute("stroke", currentColor);
-                currentPathElement.setAttribute("fill", "none");
-                currentPathElement.setAttribute("stroke-linecap", "round");
-                currentPathElement.setAttribute("stroke-linejoin", "round");
+                // Group structure allows overlapping paths to composite cleanly
+                currentStrokeGroup = document.createElementNS(SVG_NS, "g");
+                currentStrokeGroup.setAttribute("class", "stroke-group");
+                currentStrokeGroup.style.pointerEvents = "all";
+                currentStrokeGroup.setAttribute("stroke", currentColor);
+                currentStrokeGroup.setAttribute("fill", "none");
+                currentStrokeGroup.setAttribute("stroke-linecap", "round");
+                currentStrokeGroup.setAttribute("stroke-linejoin", "round");
 
-                let activeWidth = strokeWidths[currentTool] || 3;
-                currentPathElement.setAttribute("stroke-width", activeWidth);
                 if (currentTool === 'marker') {
-                    currentPathElement.setAttribute("stroke-opacity", "0.6");
-                    currentPathElement.style.mixBlendMode = "multiply";
+                    // Applying opacity at the group level prevents dark overlap dots
+                    currentStrokeGroup.setAttribute("opacity", "0.6");
+                    currentStrokeGroup.style.mixBlendMode = "multiply";
                 }
 
-                currentPathElement.setAttribute("d", cachedPathData);
+                // Temporary tail path
+                dynamicTailPath = document.createElementNS(SVG_NS, "path");
+                currentStrokeGroup.appendChild(dynamicTailPath);
 
                 const targetGroup = currentTool === 'marker' ?
                     currentSlideGroup.querySelector('.marker-strokes') :
                     currentSlideGroup.querySelector('.pen-strokes');
-                targetGroup.appendChild(currentPathElement);
+                targetGroup.appendChild(currentStrokeGroup);
 
                 requestAnimationFrame(drawLoop);
             }
@@ -651,9 +632,9 @@ const initHandwriting = function (Reveal) {
             const lastEvent = events[events.length - 1];
 
             if (isDraggingSelection) {
-                const svgPoint = getPointInSvg(lastEvent.clientX, lastEvent.clientY);
-                const dx = svgPoint.x - dragStartPos.x;
-                const dy = svgPoint.y - dragStartPos.y;
+                const pt = getPointInSvg(lastEvent.clientX, lastEvent.clientY);
+                const dx = pt.x - dragStartPos.x;
+                const dy = pt.y - dragStartPos.y;
                 moveSelectedElements(dx, dy);
                 return;
             }
@@ -663,18 +644,20 @@ const initHandwriting = function (Reveal) {
                 return;
             }
 
-            if (isLassoing && currentPathElement) {
-                const svgPoint = getPointInSvg(lastEvent.clientX, lastEvent.clientY);
-                lassoPoints.push(svgPoint);
-                const d = currentPathElement.getAttribute("d");
-                currentPathElement.setAttribute("d", d + ` L ${svgPoint.x} ${svgPoint.y}`);
+            if (isLassoing) {
+                const pt = getPointInSvg(lastEvent.clientX, lastEvent.clientY);
+                lassoPoints.push(pt);
+                const lassoEl = document.getElementById('current-lasso');
+                if (lassoEl) {
+                    const d = lassoEl.getAttribute("d");
+                    lassoEl.setAttribute("d", d + ` L ${pt.x} ${pt.y}`);
+                }
                 return;
             }
 
             if (isDrawing) {
                 events.forEach(ev => {
-                    const svgPoint = getPointInSvg(ev.clientX, ev.clientY);
-                    pendingPoints.push({ x: svgPoint.x, y: svgPoint.y });
+                    pendingPoints.push(getPointData(ev));
                 });
             }
         }, { passive: false });
@@ -690,12 +673,11 @@ const initHandwriting = function (Reveal) {
                 svg.releasePointerCapture(e.pointerId);
             }
 
-            const svgPoint = getPointInSvg(e.clientX, e.clientY);
-
             if (isDraggingSelection) {
+                const pt = getPointInSvg(e.clientX, e.clientY);
                 isDraggingSelection = false;
-                selectionTransform.x += (svgPoint.x - dragStartPos.x);
-                selectionTransform.y += (svgPoint.y - dragStartPos.y);
+                selectionTransform.x += (pt.x - dragStartPos.x);
+                selectionTransform.y += (pt.y - dragStartPos.y);
                 clearSelection();
                 setTool('pen');
                 return;
@@ -703,19 +685,18 @@ const initHandwriting = function (Reveal) {
 
             if (isLassoing) {
                 isLassoing = false;
-                if (currentPathElement) {
-                    currentPathElement.setAttribute("d", currentPathElement.getAttribute("d") + " Z");
+                const lassoEl = document.getElementById('current-lasso');
+                if (lassoEl) {
+                    lassoEl.setAttribute("d", lassoEl.getAttribute("d") + " Z");
                 }
                 performLassoSelection();
                 if (selectedElements.length > 0) {
                     isMovingSelection = true;
-                    selectedElements.forEach(el => el.style.stroke = "#22c55e");
                     svg.style.pointerEvents = "all";
                     document.getElementById('notes-delete-button-container').style.display = 'flex';
                 } else {
-                    document.getElementById('current-lasso')?.remove();
+                    if (lassoEl) lassoEl.remove();
                 }
-                currentPathElement = null;
                 return;
             }
 
@@ -732,14 +713,15 @@ const initHandwriting = function (Reveal) {
             if (isDrawing) {
                 isDrawing = false;
 
-                if (currentPathElement && currentPoints.length === 1 && pendingPoints.length === 0) {
-                    const point = currentPoints[0];
-                    const width = strokeWidths[currentTool] || 3;
-                    currentPathElement.remove();
+                if (currentStrokeGroup && currentPoints.length === 1 && pendingPoints.length === 0) {
+                    const p = currentPoints[0];
+                    const width = calculateWidth(p.p, p.tx, p.ty);
+                    currentStrokeGroup.remove();
 
                     const dot = document.createElementNS(SVG_NS, "circle");
-                    dot.setAttribute("cx", point.x);
-                    dot.setAttribute("cy", point.y);
+                    dot.setAttribute("class", "dot");
+                    dot.setAttribute("cx", p.x);
+                    dot.setAttribute("cy", p.y);
                     dot.setAttribute("r", width / 2);
                     dot.setAttribute("fill", currentColor);
                     dot.style.pointerEvents = "all";
@@ -752,25 +734,46 @@ const initHandwriting = function (Reveal) {
                         currentSlideGroup.querySelector('.pen-strokes').appendChild(dot);
                     }
                 }
-                else if (currentPathElement) {
+                else if (currentStrokeGroup) {
+                    // Flush any remaining un-rendered points into the array
                     if (pendingPoints.length > 0) {
                         for (let i = 0; i < pendingPoints.length; i++) currentPoints.push(pendingPoints[i]);
                     }
 
-                    const activeWidth = strokeWidths[currentTool] || 3;
-                    const finalSmoothedD = applyVeryLightSmoothing(currentPoints, activeWidth);
+                    // APPLY VERY LIGHT POST-STROKE SMOOTHING TO ALL PROPERTIES
+                    const smoothedPoints = applyLightSmoothingToPoints(currentPoints, 3);
 
-                    if (finalSmoothedD && finalSmoothedD.length > 0) {
-                        currentPathElement.setAttribute('d', finalSmoothedD);
-                        currentPathElement.setAttribute('shape-rendering', 'geometricPrecision');
+                    // Clear the raw fast-drawn paths, redraw smooth segmented paths
+                    currentStrokeGroup.innerHTML = '';
+
+                    let drawIdx = 0;
+                    while (drawIdx < smoothedPoints.length - 2) {
+                        const p0 = smoothedPoints[drawIdx];
+                        const p1 = smoothedPoints[drawIdx + 1];
+                        const p2 = smoothedPoints[drawIdx + 2];
+                        const { segment } = createSegment(p0, p1, p2);
+                        currentStrokeGroup.appendChild(segment);
+                        drawIdx++;
                     }
+
+                    // Append absolute last segment
+                    const n = smoothedPoints.length;
+                    if (n > 1) {
+                        const pEnd = smoothedPoints[n - 1];
+                        const pPrev = smoothedPoints[Math.max(0, n - 2)];
+                        const { segment } = createSegment(pPrev, pPrev, pEnd, true);
+                        currentStrokeGroup.appendChild(segment);
+                    }
+
+                    currentStrokeGroup.setAttribute('shape-rendering', 'geometricPrecision');
                 }
 
+                // Cleanup State
                 pendingPoints = [];
                 currentPoints = [];
-                cachedPathData = "";
                 lastProcessedIndex = 0;
-                currentPathElement = null;
+                currentStrokeGroup = null;
+                dynamicTailPath = null;
             }
             isErasing = false;
         }
