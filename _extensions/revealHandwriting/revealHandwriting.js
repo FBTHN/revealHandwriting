@@ -936,7 +936,7 @@ const initHandwriting = function (Reveal) {
 --notes-icon-size: 16px;
 --notes-gap: 6px;
 --notes-left: 60px;
---notes-bottom: 10px;
+--notes-bottom: 4%;
 }
 
 #notes-tool-container {
