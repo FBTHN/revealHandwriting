@@ -3,7 +3,7 @@
 **
 ** A plugin for reveal.js adding a handwriting canvas.
 **
-** Version: 1.1.2
+** Version: 1.2.2
 **
 ** License: MIT license
 **
@@ -41,6 +41,7 @@ const initHandwriting = function (Reveal) {
     let isDrawing = false;
     let isErasing = false;
     let isLassoing = false;
+    let showNotes = false;
     let isMovingSelection = false;
     let isDraggingSelection = false;
     let penStyleLock = false;
@@ -63,8 +64,8 @@ const initHandwriting = function (Reveal) {
     let currentColor = "#325B8B";
 
     let strokeWidths = {
-        'pen': 3,
-        'marker': 15 // Made slightly wider to better show tilt/pressure
+        'pen': 2,
+        'marker': 15
     };
 
     let toolTipElement;
@@ -76,6 +77,7 @@ const initHandwriting = function (Reveal) {
     const LASSO_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M5.00001 10C5.00001 8.75523 5.7133 7.52938 7.06628 6.57433C8.41665 5.62113 10.3346 5 12.5 5C14.6654 5 16.5834 5.62113 17.9337 6.57433C19.2867 7.52938 20 8.75523 20 10C20 11.2448 19.2867 12.4706 17.9337 13.4257C16.5834 14.3789 14.6654 15 12.5 15C11.9849 15 11.4828 14.9648 10.9982 14.898C10.934 13.1045 9.18159 12 7.50001 12C6.92753 12 6.37589 12.1176 5.88506 12.3351C5.30127 11.6111 5.00001 10.8126 5.00001 10ZM12.5 17C11.7421 17 11.0036 16.9352 10.2949 16.8124C10.2111 16.9074 10.1215 16.9971 10.027 17.0814C10.0324 17.1351 10.0364 17.1937 10.0381 17.2566C10.0459 17.5458 10.0053 17.9424 9.80913 18.3641C9.38923 19.2667 8.42683 19.9562 6.7537 20.2187C4.68005 20.544 4.14608 21.1521 4.01748 21.3745C3.95033 21.4906 3.94254 21.5823 3.94406 21.6357C3.94468 21.6576 3.94702 21.6739 3.94861 21.6827C3.96296 21.7256 3.97448 21.7699 3.98295 21.8152C4.03316 22.0804 3.97228 22.3491 3.826 22.5638C3.74444 22.6836 3.63632 22.7865 3.50609 22.8627C3.40769 22.9205 3.29851 22.962 3.1823 22.9834C3.06521 23.0053 2.94748 23.0055 2.83406 22.9863C2.687 22.9617 2.55081 22.9051 2.43293 22.8238C2.31589 22.7434 2.21506 22.6375 2.13982 22.5103C2.1012 22.4453 2.06973 22.3756 2.0465 22.3023C2.04333 22.2927 2.04 22.2823 2.03655 22.2711C2.02484 22.2331 2.01167 22.1856 1.99902 22.1296C1.97383 22.0181 1.94991 21.8695 1.94487 21.6927C1.93466 21.3347 2.00276 20.8633 2.28609 20.3733C2.85846 19.3834 4.12384 18.6068 6.4437 18.2429C6.8529 18.1787 7.15489 18.0908 7.37778 17.9981C5.70287 17.9451 4.00001 16.8095 4.00001 15C4.00001 14.4998 4.14018 14.0417 4.37329 13.6452C3.52173 12.6101 3.00001 11.3665 3.00001 10C3.00001 7.93106 4.18951 6.15691 5.91292 4.94039C7.63895 3.72202 9.97098 3 12.5 3C15.029 3 17.3611 3.72202 19.0871 4.94039C20.8105 6.15691 22 7.93106 22 10C22 12.0689 20.8105 13.8431 19.0871 15.0596C17.3611 16.278 15.029 17 12.5 17ZM6.34227 14.3786C6.60474 14.1624 7.01132 14 7.50001 14C8.5482 14 9.00001 14.6444 9.00001 15C9.00001 15.0929 8.97952 15.185 8.9364 15.2772C8.85616 15.4487 8.687 15.6381 8.41217 15.7841C8.16534 15.9153 7.85219 16 7.50001 16C6.45182 16 6.00001 15.3556 6.00001 15C6.00001 14.8092 6.09212 14.5846 6.34227 14.3786Z" fill="#000000"/></svg>`;
     const FULLSCREEN_ICON = `<svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>`;
     const SAVE_ICON = `<svg viewBox="0 0 24 24"><path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zM15 9H5V5h10v4z"/></svg>`;
+    const NOTES_TOGGLE_ICON = `<svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 14H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>`;
     const SVG_NS = "http://www.w3.org/2000/svg";
 
     // --- Core Pressure & Tilt Calculation ---
@@ -226,6 +228,15 @@ const initHandwriting = function (Reveal) {
             tx: ev.tiltX || 0,
             ty: ev.tiltY || 0
         };
+    };
+
+    function toggleNotes() {
+        const disabled = document.querySelector(".full-slide-svg.disable-notes");
+        if (!disabled) {
+            document.querySelectorAll(".full-slide-svg").forEach(el => {
+                el.classList.toggle("hide-notes");
+            });
+        }
     };
 
     Reveal.on('ready', event => {
@@ -932,92 +943,100 @@ const initHandwriting = function (Reveal) {
         style.innerHTML = `
 
 :root {
---notes-button-size: 28px;
---notes-icon-size: 16px;
---notes-gap: 6px;
---notes-left: 60px;
---notes-bottom: 4%;
+    --notes-button-size: 28px;
+    --notes-icon-size: 16px;
+    --notes-gap: 6px;
+    --notes-left: 60px;
+    --notes-bottom: 4%;
 }
 
 #notes-tool-container {
-position: fixed;
-bottom: var(--notes-bottom);
-left: var(--notes-left);
-z-index: 1001;
-display: flex;
-flex-direction: row;
-align-items: center;
-background: #f8f9fa;
-border: 1px solid #ced4da;
-border-radius: 50px;
-padding: 4px;
-box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-transition: all 0.3s ease-in-out;
+    position: fixed;
+    bottom: var(--notes-bottom);
+    left: var(--notes-left);
+    z-index: 1001;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    background: #f8f9fa;
+    border: 1px solid #ced4da;
+    border-radius: 50px;
+    padding: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    transition: all 0.3s ease-in-out;
 }
 
 .print-pdf #notes-tool-container {
-display: none !important;
+    display: none !important;
 }
 
 #notes-tool-container > *:not(:first-child) {
-opacity: 0;
-max-width: 0;
-margin-left: 0;
-overflow: hidden;
-transition: max-width 0.25s ease, opacity 0.2s ease, margin-left 0.25s ease;
-white-space: nowrap;
+    opacity: 0;
+    max-width: 0;
+    margin-left: 0;
+    overflow: hidden;
+    transition: max-width 0.25s ease, opacity 0.2s ease, margin-left 0.25s ease;
+    white-space: nowrap;
 }
 
 #notes-tool-container:hover > *:not(:first-child) {
-opacity: 1;
-max-width: var(--notes-button-size);
-margin-left: var(--notes-gap);
+    opacity: 1;
+    max-width: var(--notes-button-size);
+    margin-left: var(--notes-gap);
 }
 
 .notes-toolbar-divider {
-width: 1px;
-height: 18px;
-background: #ced4da;
-transition: opacity 0.3s ease;
+    width: 1px;
+    height: 18px;
+    background: #ced4da;
+    transition: opacity 0.3s ease;
 }
 
 .notes-ui-button {
-width: var(--notes-button-size);
-height: var(--notes-button-size);
-background: #f8f9fa;
-border: 1px solid #ced4da;
-border-radius: 50%;
-cursor: pointer;
-display: flex;
-align-items: center;
-justify-content: center;
-box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-transition: background-color 0.2s, transform 0.1s;
-flex-shrink: 0;
+    width: var(--notes-button-size);
+    height: var(--notes-button-size);
+    background: #f8f9fa;
+    border: 1px solid #ced4da;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    transition: background-color 0.2s, transform 0.1s;
+    flex-shrink: 0;
 }
 .notes-ui-button:hover { background-color: #e9ecef; }
 .notes-ui-button svg { width: var(--notes-icon-size); height: var(--notes-icon-size); fill: #495057; }
 
 .notes-tool-select-btn.active {
-background-color: #325B8B;
-border-color: #325B8B;
+    background-color: #325B8B;
+    border-color: #325B8B;
 }
 .notes-tool-select-btn.active svg {
-fill: #ffffff;
+    fill: #ffffff;
+}
+
+.notes-ui-toggle-btn.active {
+    background-color: #325B8B;
+    border-color: #325B8B;
+}
+.notes-ui-toggle-btn.active svg {
+    fill: #ffffff;
 }
 
 #notes-tool-menu {
-display: none;
-background: #fff;
-border-radius: 8px;
-padding: 12px;
-position: fixed;
-bottom: calc(var(--notes-bottom) + var(--notes-button-size) + 12px);
-left: var(--notes-left);
-width: 220px;
-box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-border: 1px solid #dee2e6;
-z-index: 1002;
+    display: none;
+    background: #fff;
+    border-radius: 8px;
+    padding: 12px;
+    position: fixed;
+    bottom: calc(var(--notes-bottom) + var(--notes-button-size) + 12px);
+    left: var(--notes-left);
+    width: 220px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    border: 1px solid #dee2e6;
+    z-index: 1002;
 }
 #notes-tool-menu.active { display: block; }
 .notes-tool-section { margin-bottom: 12px; }
@@ -1028,65 +1047,65 @@ z-index: 1002;
 .color-swatch.selected { border-color: #000; transform: scale(1.1); }
 
 #notes-stroke-width-slider {
--webkit-appearance: none;
-appearance: none;
-width: 100%;
-cursor: pointer;
-background: #ffffff;
-overflow: hidden;
-border-radius: 16px;
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    cursor: pointer;
+    background: #ffffff;
+    overflow: hidden;
+    border-radius: 16px;
 }
 #notes-stroke-width-slider::-webkit-slider-thumb {
--webkit-appearance: none;
-appearance: none;
-height: 15px;
-width: 15px;
-background-color: #333333;
-border-radius: 50%;
-box-shadow: -407px 0 0 400px rgb(90, 90, 90);
+    -webkit-appearance: none;
+    appearance: none;
+    height: 15px;
+    width: 15px;
+    background-color: #333333;
+    border-radius: 50%;
+    box-shadow: -407px 0 0 400px rgb(90, 90, 90);
 }
 #notes-stroke-width-slider::-webkit-slider-runnable-track {
--webkit-appearance: none;
-appearance: none;
-height: 15px;
-background: #cccccc;
-border-radius: 16px;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 15px;
+    background: #cccccc;
+    border-radius: 16px;
 }
 
 #notes-delete-button-container {
-position: fixed;
-bottom: 10px;
-left: 50%;
-transform: translateX(-50%);
-z-index: 1001;
-display: none;
+    position: fixed;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1001;
+    display: none;
 }
 #notes-delete-button {
-width: 36px; height: 36px;
-background: #dc2626; border: 1px solid #b91c1c;
-border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center;
-box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    width: 36px; height: 36px;
+    background: #dc2626; border: 1px solid #b91c1c;
+    border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 #notes-delete-button svg { width: 18px; height: 18px; fill: #ffffff; }
 
 #notes-tool-tip {
-position: fixed;
-z-index: 9999;
-width: 28px;
-height: 28px;
-background: transparent;
-border-radius: 50%;
-display: none;
-align-items: center;
-justify-content: center;
-pointer-events: none;
-transform: translate(-50%, -50%);
-transition: opacity 0.2s;
+    position: fixed;
+    z-index: 9999;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border-radius: 50%;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    transition: opacity 0.2s;
 }
 #notes-tool-tip svg {
-width: 16px;
-height: 16px;
-fill: black;
+    width: 16px;
+    height: 16px;
+    fill: black;
 }
 
 .selected-stroke { transition: opacity 0.2s; }
@@ -1235,6 +1254,22 @@ fill: black;
             }
         };
         container.appendChild(fullscreenButton);
+
+        const togglenotesButton = document.createElement('div');
+        togglenotesButton.className = 'notes-ui-button notes-ui-toggle-btn';
+        togglenotesButton.title = 'Toggle Notes';
+        togglenotesButton.innerHTML = NOTES_TOGGLE_ICON;
+        togglenotesButton.onclick = () => {
+            if (showNotes) {
+                showNotes = false;
+                togglenotesButton.classList.remove('active');
+            } else {
+                showNotes = true;
+                togglenotesButton.classList.add('active');
+            }
+            toggleNotes();
+        };
+        container.appendChild(togglenotesButton);
 
         const saveButton = document.createElement('div');
         saveButton.className = 'notes-ui-button';
