@@ -3,7 +3,7 @@
 **
 ** A plugin for reveal.js adding a handwriting canvas.
 **
-** Version: 1.2.2
+** Version: 1.2.3
 **
 ** License: MIT license
 **
@@ -231,10 +231,12 @@ const initHandwriting = function (Reveal) {
     };
 
     function toggleNotes() {
+        console.log("calling toggle hide-notes")
         const disabled = document.querySelector(".full-slide-svg.disable-notes");
         if (!disabled) {
             document.querySelectorAll(".full-slide-svg").forEach(el => {
                 el.classList.toggle("hide-notes");
+                console.log("toggling hide-notes")
             });
         }
     };
@@ -286,6 +288,12 @@ const initHandwriting = function (Reveal) {
         createTooltipUI();
 
         setupPenEvents();
+
+        window.addEventListener("keydown", (e) => {
+            if (e.key.toLowerCase() === 't') {
+                toggleNotes();
+            }
+        });
 
         window.addEventListener("pointermove", (e) => {
             if (
