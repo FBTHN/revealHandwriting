@@ -298,7 +298,8 @@ const initHandwriting = function (Reveal) {
             if (
                 e.target.closest('#notes-tool-container') ||
                 e.target.closest('#notes-delete-button-container') ||
-                e.target.closest('#notes-tool-menu')
+                e.target.closest('#notes-tool-menu') ||
+                e.target.closest('z-controls')
             ) return;
         });
 
@@ -565,7 +566,8 @@ const initHandwriting = function (Reveal) {
             if (
                 e.target.closest('#notes-tool-container') ||
                 e.target.closest('#notes-delete-button-container') ||
-                e.target.closest('#notes-tool-menu')
+                e.target.closest('#notes-tool-menu') ||
+                e.target.closest('z-controls')
             ) return;
 
             absorbPenEvents(e);
