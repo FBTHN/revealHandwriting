@@ -1,1 +1,221 @@
-/* TODO: CSS for plugin */
+:root {
+    --notes-button-size: 28px;
+    --notes-icon-size: 16px;
+    --notes-gap: 6px;
+    --notes-left: 60px;
+    --notes-bottom: 4%;
+}
+
+#notes-tool-container {
+    position: fixed;
+    bottom: var(--notes-bottom);
+    left: var(--notes-left);
+    z-index: 1001;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    background: #f8f9fa;
+    border: 1px solid #ced4da;
+    border-radius: 50px;
+    padding: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: all 0.3s ease-in-out;
+}
+
+.print-pdf #notes-tool-container {
+    display: none !important;
+}
+
+#notes-tool-container>*:not(:first-child) {
+    opacity: 0;
+    max-width: 0;
+    margin-left: 0;
+    overflow: hidden;
+    transition: max-width 0.25s ease, opacity 0.2s ease, margin-left 0.25s ease;
+    white-space: nowrap;
+}
+
+#notes-tool-container:hover>*:not(:first-child) {
+    opacity: 1;
+    max-width: var(--notes-button-size);
+    margin-left: var(--notes-gap);
+}
+
+.notes-toolbar-divider {
+    width: 1px;
+    height: 18px;
+    background: #ced4da;
+    transition: opacity 0.3s ease;
+}
+
+.notes-ui-button {
+    width: var(--notes-button-size);
+    height: var(--notes-button-size);
+    background: #f8f9fa;
+    border: 1px solid #ced4da;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    transition: background-color 0.2s, transform 0.1s;
+    flex-shrink: 0;
+}
+
+.notes-ui-button:hover {
+    background-color: #e9ecef;
+}
+
+.notes-ui-button svg {
+    width: var(--notes-icon-size);
+    height: var(--notes-icon-size);
+    fill: #495057;
+}
+
+.notes-tool-select-btn.active {
+    background-color: #325B8B;
+    border-color: #325B8B;
+}
+
+.notes-tool-select-btn.active svg {
+    fill: #ffffff;
+}
+
+.notes-ui-toggle-btn.active {
+    background-color: #325B8B;
+    border-color: #325B8B;
+}
+
+.notes-ui-toggle-btn.active svg {
+    fill: #ffffff;
+}
+
+#notes-tool-menu {
+    display: none;
+    background: #fff;
+    border-radius: 8px;
+    padding: 12px;
+    position: fixed;
+    bottom: calc(var(--notes-bottom) + var(--notes-button-size) + 12px);
+    left: var(--notes-left);
+    width: 220px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border: 1px solid #dee2e6;
+    z-index: 1002;
+}
+
+#notes-tool-menu.active {
+    display: block;
+}
+
+.notes-tool-section {
+    margin-bottom: 12px;
+}
+
+.notes-tool-section h4 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    color: #212529;
+    font-family: sans-serif;
+    border-bottom: 1px solid #e9ecef;
+}
+
+#notes-color-palette {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 5px;
+}
+
+.color-swatch {
+    aspect-ratio: 1;
+    border-radius: 50%;
+    cursor: pointer;
+    border: 1px solid #adb5bd;
+}
+
+.color-swatch.selected {
+    border-color: #000;
+    transform: scale(1.1);
+}
+
+#notes-stroke-width-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    cursor: pointer;
+    background: #ffffff;
+    overflow: hidden;
+    border-radius: 16px;
+}
+
+#notes-stroke-width-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 15px;
+    width: 15px;
+    background-color: #333333;
+    border-radius: 50%;
+    box-shadow: -407px 0 0 400px rgb(90, 90, 90);
+}
+
+#notes-stroke-width-slider::-webkit-slider-runnable-track {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 15px;
+    background: #cccccc;
+    border-radius: 16px;
+}
+
+#notes-delete-button-container {
+    position: fixed;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1001;
+    display: none;
+}
+
+#notes-delete-button {
+    width: 36px;
+    height: 36px;
+    background: #dc2626;
+    border: 1px solid #b91c1c;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+#notes-delete-button svg {
+    width: 18px;
+    height: 18px;
+    fill: #ffffff;
+}
+
+#notes-tool-tip {
+    position: fixed;
+    z-index: 9999;
+    width: 28px;
+    height: 28px;
+    background: transparent;
+    border-radius: 50%;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    transition: opacity 0.2s;
+}
+
+#notes-tool-tip svg {
+    width: 16px;
+    height: 16px;
+    fill: black;
+}
+
+.selected-stroke {
+    transition: opacity 0.2s;
+}
