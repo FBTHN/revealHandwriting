@@ -3,7 +3,7 @@
 **
 ** A plugin for reveal.js adding a handwriting canvas.
 **
-** Version: 1.2.3
+** Version: 1.2.4
 **
 ** License: MIT license
 **
