@@ -3,7 +3,7 @@
 **
 ** A plugin for reveal.js adding a handwriting canvas.
 **
-** Version: 1.2.4
+** Version: 1.3.0
 **
 ** License: MIT license
 **
@@ -80,25 +80,80 @@ const initHandwriting = function (Reveal) {
     const NOTES_TOGGLE_ICON = `<svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 14H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>`;
     const SVG_NS = "http://www.w3.org/2000/svg";
 
-    // --- Core Pressure & Tilt Calculation ---
+    // --- CHANGED: Read meta tag to conditionally disable Notes feature UI completely
+    const metaDisable = document.querySelector('meta[name="disable-notes"]');
+    const isNotesDisabled = metaDisable && metaDisable.getAttribute('content') === 'disable-notes';
+
+    let saveTimeout;
+    function requestSave() {
+        clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(saveToSessionStorage, 300);
+    }
+
+    function saveToSessionStorage() {
+        try {
+            const data = {};
+            const slides = Reveal.getSlides();
+            slides.forEach(slide => {
+                const slideSvg = slide.querySelector('.slide-notes-canvas');
+                if (slideSvg) {
+                    const indices = Reveal.getIndices(slide);
+                    const id = `slide-${indices.h}-${indices.v}`;
+                    data[id] = slideSvg.innerHTML;
+                }
+            });
+            sessionStorage.setItem('revealHandwritingData', JSON.stringify(data));
+        } catch (e) {
+            console.warn("Handwriting plugin: Failed to save to sessionStorage", e);
+        }
+    }
+
+    function loadFromSessionStorage() {
+        try {
+            const stored = sessionStorage.getItem('revealHandwritingData');
+            if (stored) {
+                const data = JSON.parse(stored);
+                const slides = Reveal.getSlides();
+                slides.forEach(slide => {
+                    const indices = Reveal.getIndices(slide);
+                    const id = `slide-${indices.h}-${indices.v}`;
+                    if (data[id]) {
+                        let slideSvg = slide.querySelector('.slide-notes-canvas');
+                        if (!slideSvg) {
+                            slideSvg = document.createElementNS(SVG_NS, "svg");
+                            slideSvg.setAttribute("class", "slide-notes-canvas full-slide-svg");
+                            slideSvg.style.position = "absolute";
+                            slideSvg.style.top = "0";
+                            slideSvg.style.left = "0";
+                            slideSvg.style.width = "100%";
+                            slideSvg.style.height = "100%";
+                            slideSvg.style.zIndex = "100";
+                            slideSvg.style.pointerEvents = "none";
+                            slideSvg.style.overflow = "visible";
+                            slide.appendChild(slideSvg);
+                        }
+                        slideSvg.innerHTML = data[id];
+                    }
+                });
+            }
+        } catch (e) {
+            console.warn("Handwriting plugin: Failed to load from sessionStorage", e);
+        }
+    }
+
     function calculateWidth(pressure, tiltX, tiltY) {
         const baseWidth = strokeWidths[currentTool] || 3;
         if (currentTool === 'marker') {
-            // Marker reacts heavily to tilt magnitude (like a flat tip)
             const tiltMag = Math.sqrt(tiltX * tiltX + tiltY * tiltY) / 90;
             return baseWidth * (0.4 + pressure * 0.4 + tiltMag * 0.6);
         } else {
-            // Pen reacts heavily to downward pressure
             return baseWidth * (0.2 + pressure * 1.5);
         }
     }
 
-    // --- Fast Draw segment Generation ---
     function createSegment(p0, p1, p2, isLine = false) {
         const midX = isLine ? p2.x : (p1.x + p2.x) / 2;
         const midY = isLine ? p2.y : (p1.y + p2.y) / 2;
-
-        // Midpoint data for smooth width calculation
         const midP = (p1.p + p2.p) / 2;
         const midTx = (p1.tx + p2.tx) / 2;
         const midTy = (p1.ty + p2.ty) / 2;
@@ -119,9 +174,6 @@ const initHandwriting = function (Reveal) {
         return { segment, midX, midY };
     }
 
-    // -------------------------------------------------------------
-    // LIGHTWEIGHT DRAW LOOP (For real-time 0-lag drawing)
-    // -------------------------------------------------------------
     const drawLoop = () => {
         if (!isDrawing || !currentStrokeGroup) return;
 
@@ -133,7 +185,6 @@ const initHandwriting = function (Reveal) {
                 if (lastPoint) {
                     const dx = p.x - lastPoint.x;
                     const dy = p.y - lastPoint.y;
-                    // Ignore points less than ~1.4px away to thin the path naturally
                     if (dx * dx + dy * dy > 2) {
                         currentPoints.push(p);
                     }
@@ -143,7 +194,6 @@ const initHandwriting = function (Reveal) {
             }
             pendingPoints = [];
 
-            // Fast Midpoint Algorithm writing directly to DOM Elements
             while (lastProcessedIndex < currentPoints.length - 2) {
                 const p0 = currentPoints[lastProcessedIndex];
                 const p1 = currentPoints[lastProcessedIndex + 1];
@@ -155,7 +205,6 @@ const initHandwriting = function (Reveal) {
                 lastProcessedIndex++;
             }
 
-            // Draw a temporary straight line tail to the literal mouse position
             const n = currentPoints.length;
             if (n > 1) {
                 const pEnd = currentPoints[n - 1];
@@ -167,13 +216,9 @@ const initHandwriting = function (Reveal) {
                 dynamicTailPath.setAttribute("stroke-width", calculateWidth(pEnd.p, pEnd.tx, pEnd.ty).toFixed(2));
             }
         }
-
         requestAnimationFrame(drawLoop);
     };
 
-    // -------------------------------------------------------------
-    // VERY LIGHT POST-STROKE SMOOTHING (Applied only when pen lifts)
-    // -------------------------------------------------------------
     function applyLightSmoothingToPoints(points, win = 3) {
         if (points.length <= 2) return points.slice();
         const half = Math.floor(win / 2);
@@ -215,7 +260,6 @@ const initHandwriting = function (Reveal) {
         return { x, y };
     };
 
-    // Extracts normalized coordinates + pressure/tilt
     const getPointData = (ev) => {
         const svgPoint = getPointInSvg(ev.clientX, ev.clientY);
         let p = ev.pressure !== undefined ? ev.pressure : 0.5;
@@ -231,39 +275,21 @@ const initHandwriting = function (Reveal) {
     };
 
     function toggleNotes() {
-        console.log("calling toggle hide-notes")
+        if (isNotesDisabled) return; // Prevent toggle if meta tag says so
+
         const disabled = document.querySelector(".full-slide-svg.disable-notes");
         if (!disabled) {
             document.querySelectorAll(".full-slide-svg").forEach(el => {
+                if (el.style.display === 'none' && !el.classList.contains('hide-notes')) {
+                    el.style.display = 'block';
+                }
                 el.classList.toggle("hide-notes");
-                console.log("toggling hide-notes")
             });
         }
     };
 
     Reveal.on('ready', event => {
-        svg = document.getElementById('reveal-notes-canvas');
-
-        if (!svg) {
-            svg = document.createElementNS(SVG_NS, "svg");
-            svg.id = 'reveal-notes-canvas';
-            svg.style.position = "absolute";
-            svg.style.top = "0";
-            svg.style.left = "0";
-            svg.style.width = "100%";
-            svg.style.height = "100%";
-            svg.style.zIndex = "100";
-            svg.style.touchAction = "none";
-            svg.style.pointerEvents = "none";
-
-            const slidesContainer = document.querySelector('.reveal .slides');
-            if (slidesContainer) {
-                slidesContainer.appendChild(svg);
-            } else {
-                document.body.appendChild(svg);
-            }
-        }
-
+        loadFromSessionStorage();
 
         const revealContainer = document.querySelector('.reveal');
         if (revealContainer) {
@@ -285,12 +311,16 @@ const initHandwriting = function (Reveal) {
 
         createNotesUI();
         createTooltipUI();
-
         setupPenEvents();
 
         window.addEventListener("keydown", (e) => {
-            if (e.key.toLowerCase() === 't') {
+            // --- CHANGED: Only allow "t" if notes aren't disabled by meta tag
+            if (e.key.toLowerCase() === 't' && !isNotesDisabled) {
                 toggleNotes();
+            }
+            if (e.key.toLowerCase() === 'e') {
+                clearSelection();
+                requestSave();
             }
         });
 
@@ -309,51 +339,49 @@ const initHandwriting = function (Reveal) {
 
     function updateActiveSlideGroup() {
         clearSelection();
-        if (!svg) return;
 
-        const groups = svg.querySelectorAll('g.slide-drawing');
-        groups.forEach(g => g.style.display = 'none');
+        const currentSlide = Reveal.getCurrentSlide();
+        if (!currentSlide) return;
 
-        const indices = Reveal.getIndices();
-        const vIndex = indices.v || 0;
-        const id = `slide-${indices.h}-${vIndex}`;
+        let slideSvg = currentSlide.querySelector('.slide-notes-canvas');
 
-        let group = svg.querySelector(`g[id="${id}"]`);
-        if (!group) {
-            group = document.createElementNS(SVG_NS, "g");
-            group.setAttribute("id", id);
-            group.setAttribute("class", "slide-drawing");
-            svg.appendChild(group);
-        }
+        if (!slideSvg) {
+            slideSvg = document.createElementNS(SVG_NS, "svg");
+            slideSvg.setAttribute("class", "slide-notes-canvas full-slide-svg");
+            slideSvg.style.position = "absolute";
+            slideSvg.style.top = "0";
+            slideSvg.style.left = "0";
+            slideSvg.style.width = "100%";
+            slideSvg.style.height = "100%";
+            slideSvg.style.zIndex = "100";
+            slideSvg.style.pointerEvents = "none";
+            slideSvg.style.overflow = "visible";
 
-        let markerStrokes = group.querySelector('.marker-strokes');
-        if (!markerStrokes) {
-            markerStrokes = document.createElementNS(SVG_NS, "g");
+            currentSlide.appendChild(slideSvg);
+
+            let markerStrokes = document.createElementNS(SVG_NS, "g");
             markerStrokes.setAttribute("class", "marker-strokes");
-            group.appendChild(markerStrokes);
-        }
+            slideSvg.appendChild(markerStrokes);
 
-        let penStrokes = group.querySelector('.pen-strokes');
-        if (!penStrokes) {
-            penStrokes = document.createElementNS(SVG_NS, "g");
+            let penStrokes = document.createElementNS(SVG_NS, "g");
             penStrokes.setAttribute("class", "pen-strokes");
-            group.appendChild(penStrokes);
+            slideSvg.appendChild(penStrokes);
         }
 
-        group.style.display = 'block';
-        currentSlideGroup = group;
+        svg = slideSvg;
+        currentSlideGroup = slideSvg;
     }
 
     function beginPenSession(e) {
         penSession = true;
-        svg.style.pointerEvents = "all";
-        try { svg.setPointerCapture(e.pointerId); } catch (err) { }
+        if (svg) svg.style.pointerEvents = "all";
+        try { if (svg) svg.setPointerCapture(e.pointerId); } catch (err) { }
     }
 
     function endPenSession(e) {
         penSession = false;
-        try { if (svg.hasPointerCapture?.(e.pointerId)) svg.releasePointerCapture(e.pointerId); } catch (err) { }
-        svg.style.pointerEvents = "none";
+        try { if (svg && svg.hasPointerCapture?.(e.pointerId)) svg.releasePointerCapture(e.pointerId); } catch (err) { }
+        if (svg) svg.style.pointerEvents = "none";
     }
 
     async function fetchAsDataURL(url) {
@@ -433,9 +461,10 @@ const initHandwriting = function (Reveal) {
         const element = document.elementFromPoint(x, y);
         if (element) {
             const group = element.closest('g.stroke-group, circle.dot');
-            if (group && group.closest('.slide-drawing') === currentSlideGroup) {
+            if (group && group.closest('.slide-notes-canvas') === currentSlideGroup) {
                 if (group.id === 'current-lasso') return;
                 group.remove();
+                requestSave();
             }
         }
     }
@@ -459,7 +488,6 @@ const initHandwriting = function (Reveal) {
                     group.style.opacity = "0.7";
                 }
             } else {
-                // If it's a stroke group, sample its paths
                 const paths = Array.from(group.querySelectorAll('path'));
                 if (paths.length === 0) return;
 
@@ -494,6 +522,7 @@ const initHandwriting = function (Reveal) {
     }
 
     function clearSelection() {
+        if (!svg) return;
         svg.style.pointerEvents = "none";
 
         if (isDraggingSelection) {
@@ -506,7 +535,7 @@ const initHandwriting = function (Reveal) {
             if (el.tagName === 'circle') {
                 el.style.fill = "";
             } else {
-                el.style.stroke = ""; // reset group stroke override
+                el.style.stroke = "";
             }
 
             el.style.opacity = "";
@@ -558,9 +587,11 @@ const initHandwriting = function (Reveal) {
             }
 
             if (e.pointerType !== 'pen') {
-                svg.style.pointerEvents = "none";
+                if (svg) svg.style.pointerEvents = "none";
                 return;
             }
+            if (!svg) return;
+
             beginPenSession(e);
 
             if (
@@ -615,7 +646,6 @@ const initHandwriting = function (Reveal) {
                 pendingPoints = [];
                 lastProcessedIndex = 0;
 
-                // Group structure allows overlapping paths to composite cleanly
                 currentStrokeGroup = document.createElementNS(SVG_NS, "g");
                 currentStrokeGroup.setAttribute("class", "stroke-group");
                 currentStrokeGroup.style.pointerEvents = "all";
@@ -625,12 +655,10 @@ const initHandwriting = function (Reveal) {
                 currentStrokeGroup.setAttribute("stroke-linejoin", "round");
 
                 if (currentTool === 'marker') {
-                    // Applying opacity at the group level prevents dark overlap dots
                     currentStrokeGroup.setAttribute("opacity", "0.6");
                     currentStrokeGroup.style.mixBlendMode = "multiply";
                 }
 
-                // Temporary tail path
                 dynamicTailPath = document.createElementNS(SVG_NS, "path");
                 currentStrokeGroup.appendChild(dynamicTailPath);
 
@@ -689,7 +717,7 @@ const initHandwriting = function (Reveal) {
             if (e.target.closest('#notes-tool-container, #notes-delete-button-container, #notes-tool-menu')) return;
             absorbPenEvents(e);
 
-            if (svg.hasPointerCapture(e.pointerId)) {
+            if (svg && svg.hasPointerCapture(e.pointerId)) {
                 svg.releasePointerCapture(e.pointerId);
             }
 
@@ -700,6 +728,7 @@ const initHandwriting = function (Reveal) {
                 selectionTransform.y += (pt.y - dragStartPos.y);
                 clearSelection();
                 setTool('pen');
+                requestSave();
                 return;
             }
 
@@ -712,7 +741,7 @@ const initHandwriting = function (Reveal) {
                 performLassoSelection();
                 if (selectedElements.length > 0) {
                     isMovingSelection = true;
-                    svg.style.pointerEvents = "all";
+                    if (svg) svg.style.pointerEvents = "all";
                     document.getElementById('notes-delete-button-container').style.display = 'flex';
                 } else {
                     if (lassoEl) lassoEl.remove();
@@ -755,15 +784,11 @@ const initHandwriting = function (Reveal) {
                     }
                 }
                 else if (currentStrokeGroup) {
-                    // Flush any remaining un-rendered points into the array
                     if (pendingPoints.length > 0) {
                         for (let i = 0; i < pendingPoints.length; i++) currentPoints.push(pendingPoints[i]);
                     }
 
-                    // APPLY VERY LIGHT POST-STROKE SMOOTHING TO ALL PROPERTIES
                     const smoothedPoints = applyLightSmoothingToPoints(currentPoints, 3);
-
-                    // Clear the raw fast-drawn paths, redraw smooth segmented paths
                     currentStrokeGroup.innerHTML = '';
 
                     let drawIdx = 0;
@@ -776,7 +801,6 @@ const initHandwriting = function (Reveal) {
                         drawIdx++;
                     }
 
-                    // Append absolute last segment
                     const n = smoothedPoints.length;
                     if (n > 1) {
                         const pEnd = smoothedPoints[n - 1];
@@ -788,12 +812,13 @@ const initHandwriting = function (Reveal) {
                     currentStrokeGroup.setAttribute('shape-rendering', 'geometricPrecision');
                 }
 
-                // Cleanup State
                 pendingPoints = [];
                 currentPoints = [];
                 lastProcessedIndex = 0;
                 currentStrokeGroup = null;
                 dynamicTailPath = null;
+
+                requestSave();
             }
             isErasing = false;
         }
@@ -813,6 +838,7 @@ const initHandwriting = function (Reveal) {
 
         try {
             clearSelection();
+            requestSave();
 
             const menu = document.getElementById('notes-tool-menu');
             if (menu) menu.classList.remove('active');
@@ -825,18 +851,26 @@ const initHandwriting = function (Reveal) {
             ];
             uiElements.forEach(el => el && (el.style.display = 'none'));
 
-            const drawingGroups = svg.querySelectorAll('g.slide-drawing');
-            drawingGroups.forEach(g => g.style.display = 'block');
-
             const docClone = document.documentElement.cloneNode(true);
 
-            const allDrawingsInClone = docClone.querySelectorAll('g.slide-drawing');
-            allDrawingsInClone.forEach(g => g.style.display = 'none');
+            const cleanElements = docClone.querySelectorAll('.reveal, .reveal .slides, .reveal .slides section');
+            cleanElements.forEach(el => {
+                el.style.removeProperty('transform');
+                el.style.removeProperty('width');
+                el.style.removeProperty('height');
+                el.style.removeProperty('zoom');
+                el.style.removeProperty('display');
+                el.style.removeProperty('top');
+                el.style.removeProperty('left');
+                el.classList.remove('present', 'past', 'future');
+            });
 
-            const firstDrawingInClone = docClone.querySelector('g#slide-0-0');
-            if (firstDrawingInClone) {
-                firstDrawingInClone.style.display = 'block';
-            }
+            // Also delete any Reveal auto-generated UI (like background containers) so it re-generates them cleanly
+            const generatedBackgrounds = docClone.querySelectorAll('.backgrounds, .slide-backgrounds, .speaker-notes, .pause-overlay, .progress, .controls');
+            generatedBackgrounds.forEach(el => el.remove());
+
+            const allDrawingsInClone = docClone.querySelectorAll('.slide-notes-canvas');
+            allDrawingsInClone.forEach(g => g.style.display = 'block');
 
             const imgElements = docClone.querySelectorAll('img');
             for (const img of imgElements) {
@@ -869,8 +903,6 @@ const initHandwriting = function (Reveal) {
                 }
             }
 
-
-            // Inline CSS backgrounds
             const styleElements = docClone.querySelectorAll('style');
             for (const style of styleElements) {
                 let css = style.textContent;
@@ -1089,21 +1121,24 @@ const initHandwriting = function (Reveal) {
         };
         container.appendChild(fullscreenButton);
 
-        const togglenotesButton = document.createElement('div');
-        togglenotesButton.className = 'notes-ui-button notes-ui-toggle-btn';
-        togglenotesButton.title = 'Toggle Notes';
-        togglenotesButton.innerHTML = NOTES_TOGGLE_ICON;
-        togglenotesButton.onclick = () => {
-            if (showNotes) {
-                showNotes = false;
-                togglenotesButton.classList.remove('active');
-            } else {
-                showNotes = true;
-                togglenotesButton.classList.add('active');
-            }
-            toggleNotes();
-        };
-        container.appendChild(togglenotesButton);
+        // Conditionally inject the Notes Toggle UI button based on Meta Tag
+        if (!isNotesDisabled) {
+            const togglenotesButton = document.createElement('div');
+            togglenotesButton.className = 'notes-ui-button notes-ui-toggle-btn';
+            togglenotesButton.title = 'Toggle Notes';
+            togglenotesButton.innerHTML = NOTES_TOGGLE_ICON;
+            togglenotesButton.onclick = () => {
+                if (showNotes) {
+                    showNotes = false;
+                    togglenotesButton.classList.remove('active');
+                } else {
+                    showNotes = true;
+                    togglenotesButton.classList.add('active');
+                }
+                toggleNotes();
+            };
+            container.appendChild(togglenotesButton);
+        }
 
         const saveButton = document.createElement('div');
         saveButton.className = 'notes-ui-button';
@@ -1126,6 +1161,7 @@ const initHandwriting = function (Reveal) {
             if (lassoEl) lassoEl.remove();
             clearSelection();
             setTool('pen');
+            requestSave();
         };
         deleteBtnContainer.appendChild(deleteBtn);
         document.body.appendChild(deleteBtnContainer);
@@ -1134,5 +1170,4 @@ const initHandwriting = function (Reveal) {
         swallowUIEvents(container);
         swallowUIEvents(deleteBtnContainer);
     }
-
 };
