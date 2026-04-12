@@ -3,7 +3,7 @@
 **
 ** A plugin for reveal.js adding a handwriting canvas.
 **
-** Version: 1.3.0
+** Version: 1.3.1
 **
 ** License: MIT license
 **
@@ -47,7 +47,6 @@ const initHandwriting = function (Reveal) {
     let penStyleLock = false;
     let penSession = false;
 
-    // Advanced structured caching for variable-width strokes
     let currentStrokeGroup = null;
     let dynamicTailPath = null;
     let currentPoints = [];
@@ -80,9 +79,9 @@ const initHandwriting = function (Reveal) {
     const NOTES_TOGGLE_ICON = `<svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 14H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>`;
     const SVG_NS = "http://www.w3.org/2000/svg";
 
-    // --- CHANGED: Read meta tag to conditionally disable Notes feature UI completely
+    // Read meta tag to conditionally disable Notes feature UI completely
     const metaDisable = document.querySelector('meta[name="disable-notes"]');
-    const isNotesDisabled = metaDisable && metaDisable.getAttribute('content') === 'disable-notes';
+    const isNotesDisabled = metaDisable && metaDisable.getAttribute('content') === 'true';
 
     let saveTimeout;
     function requestSave() {
@@ -92,16 +91,31 @@ const initHandwriting = function (Reveal) {
 
     function saveToSessionStorage() {
         try {
-            const data = {};
-            const slides = Reveal.getSlides();
-            slides.forEach(slide => {
-                const slideSvg = slide.querySelector('.slide-notes-canvas');
-                if (slideSvg) {
-                    const indices = Reveal.getIndices(slide);
-                    const id = `slide-${indices.h}-${indices.v}`;
+            // Load existing data to avoid wiping out slides that might be hidden or cloned
+            const stored = sessionStorage.getItem('revealHandwritingData');
+            const data = stored ? JSON.parse(stored) : {};
+
+            // Find all canvases globally
+            const allCanvases = document.querySelectorAll('.slide-notes-canvas');
+
+            allCanvases.forEach(slideSvg => {
+                // Rely firmly on our absolute data-tag rather than asking Reveal for the layout index
+                let id = slideSvg.getAttribute('data-slide-id');
+
+                if (!id) {
+                    const slide = slideSvg.closest('section');
+                    if (slide) {
+                        const indices = Reveal.getIndices(slide);
+                        id = `slide-${indices.h}-${indices.v}`;
+                        slideSvg.setAttribute('data-slide-id', id);
+                    }
+                }
+
+                if (id) {
                     data[id] = slideSvg.innerHTML;
                 }
             });
+
             sessionStorage.setItem('revealHandwritingData', JSON.stringify(data));
         } catch (e) {
             console.warn("Handwriting plugin: Failed to save to sessionStorage", e);
@@ -117,6 +131,7 @@ const initHandwriting = function (Reveal) {
                 slides.forEach(slide => {
                     const indices = Reveal.getIndices(slide);
                     const id = `slide-${indices.h}-${indices.v}`;
+
                     if (data[id]) {
                         let slideSvg = slide.querySelector('.slide-notes-canvas');
                         if (!slideSvg) {
@@ -132,6 +147,8 @@ const initHandwriting = function (Reveal) {
                             slideSvg.style.overflow = "visible";
                             slide.appendChild(slideSvg);
                         }
+                        // Guarantee the correct ID is tagged immediately
+                        slideSvg.setAttribute('data-slide-id', id);
                         slideSvg.innerHTML = data[id];
                     }
                 });
@@ -275,7 +292,7 @@ const initHandwriting = function (Reveal) {
     };
 
     function toggleNotes() {
-        if (isNotesDisabled) return; // Prevent toggle if meta tag says so
+        if (isNotesDisabled) return;
 
         const disabled = document.querySelector(".full-slide-svg.disable-notes");
         if (!disabled) {
@@ -314,7 +331,6 @@ const initHandwriting = function (Reveal) {
         setupPenEvents();
 
         window.addEventListener("keydown", (e) => {
-            // --- CHANGED: Only allow "t" if notes aren't disabled by meta tag
             if (e.key.toLowerCase() === 't' && !isNotesDisabled) {
                 toggleNotes();
             }
@@ -338,6 +354,11 @@ const initHandwriting = function (Reveal) {
     });
 
     function updateActiveSlideGroup() {
+        // Prevent accidental re-assignment or bad tags while Reveal.js is reconstructing the DOM for printing
+        if (document.body.classList.contains('print-pdf') || document.body.classList.contains('reveal-print')) {
+            return;
+        }
+
         clearSelection();
 
         const currentSlide = Reveal.getCurrentSlide();
@@ -357,6 +378,9 @@ const initHandwriting = function (Reveal) {
             slideSvg.style.pointerEvents = "none";
             slideSvg.style.overflow = "visible";
 
+            const indices = Reveal.getIndices(currentSlide);
+            slideSvg.setAttribute('data-slide-id', `slide-${indices.h}-${indices.v}`);
+
             currentSlide.appendChild(slideSvg);
 
             let markerStrokes = document.createElementNS(SVG_NS, "g");
@@ -366,6 +390,10 @@ const initHandwriting = function (Reveal) {
             let penStrokes = document.createElementNS(SVG_NS, "g");
             penStrokes.setAttribute("class", "pen-strokes");
             slideSvg.appendChild(penStrokes);
+        } else if (!slideSvg.hasAttribute('data-slide-id')) {
+            // Failsafe for older initialized SVGs missing the tag
+            const indices = Reveal.getIndices(currentSlide);
+            slideSvg.setAttribute('data-slide-id', `slide-${indices.h}-${indices.v}`);
         }
 
         svg = slideSvg;
@@ -579,6 +607,11 @@ const initHandwriting = function (Reveal) {
         });
 
         window.addEventListener('pointerdown', (e) => {
+            // Handle detached SVG from DOM changes (like closing out of export mode)
+            if (svg && !document.body.contains(svg)) {
+                updateActiveSlideGroup();
+            }
+
             const menu = document.getElementById('notes-tool-menu');
             if (menu && menu.classList.contains('active')) {
                 if (!e.target.closest('#notes-tool-menu') && !e.target.closest('#notes-tool-container')) {
@@ -590,6 +623,7 @@ const initHandwriting = function (Reveal) {
                 if (svg) svg.style.pointerEvents = "none";
                 return;
             }
+
             if (!svg) return;
 
             beginPenSession(e);
@@ -865,7 +899,6 @@ const initHandwriting = function (Reveal) {
                 el.classList.remove('present', 'past', 'future');
             });
 
-            // Also delete any Reveal auto-generated UI (like background containers) so it re-generates them cleanly
             const generatedBackgrounds = docClone.querySelectorAll('.backgrounds, .slide-backgrounds, .speaker-notes, .pause-overlay, .progress, .controls');
             generatedBackgrounds.forEach(el => el.remove());
 
@@ -1121,7 +1154,6 @@ const initHandwriting = function (Reveal) {
         };
         container.appendChild(fullscreenButton);
 
-        // Conditionally inject the Notes Toggle UI button based on Meta Tag
         if (!isNotesDisabled) {
             const togglenotesButton = document.createElement('div');
             togglenotesButton.className = 'notes-ui-button notes-ui-toggle-btn';
