@@ -3,7 +3,7 @@
 **
 ** A plugin for reveal.js adding a handwriting canvas.
 **
-** Version: 1.3.1
+** Version: 1.3.3
 **
 ** License: MIT license
 **
@@ -330,16 +330,6 @@ const initHandwriting = function (Reveal) {
         createTooltipUI();
         setupPenEvents();
 
-        window.addEventListener("keydown", (e) => {
-            if (e.key.toLowerCase() === 't' && !isNotesDisabled) {
-                toggleNotes();
-            }
-            if (e.key.toLowerCase() === 'e') {
-                clearSelection();
-                requestSave();
-            }
-        });
-
         window.addEventListener("pointermove", (e) => {
             if (
                 e.target.closest('#notes-tool-container') ||
@@ -351,6 +341,19 @@ const initHandwriting = function (Reveal) {
 
         Reveal.on('slidechanged', updateActiveSlideGroup);
         updateActiveSlideGroup();
+
+        // Exit export mode button
+        const exitBtn = document.createElement('div');
+        exitBtn.id = 'exit-export-mode-btn';
+        exitBtn.title = "Return to Presentation Mode";
+        exitBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>';
+
+        exitBtn.addEventListener('click', () => {
+            const eKey = new KeyboardEvent('keydown', { key: 'e', keyCode: 69, bubbles: true });
+            document.dispatchEvent(eKey);
+        });
+
+        document.body.appendChild(exitBtn);
     });
 
     function updateActiveSlideGroup() {
