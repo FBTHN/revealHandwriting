@@ -3,7 +3,7 @@
 **
 ** A plugin for reveal.js adding a handwriting canvas.
 **
-** Version: 1.3.4
+** Version: 1.3.5
 **
 ** License: MIT license
 **
@@ -41,7 +41,7 @@ const initHandwriting = function (Reveal) {
     let isDrawing = false;
     let isErasing = false;
     let isLassoing = false;
-    let showNotes = false;
+    let hideNotes = true;
     let isMovingSelection = false;
     let isDraggingSelection = false;
     let penStyleLock = false;
@@ -61,11 +61,10 @@ const initHandwriting = function (Reveal) {
 
     let currentTool = 'pen';
     let currentPenColor = "#325B8B";
-    let currentMarkerColor = "#FFF1A1";
-    // let currentColor = "#325B8B";
+    let currentMarkerColor = "#F2AA84";
 
     let strokeWidths = {
-        'pen': 1,
+        'pen': 1.5,
         'marker': 15
     };
 
@@ -93,15 +92,12 @@ const initHandwriting = function (Reveal) {
 
     function saveToSessionStorage() {
         try {
-            // Load existing data to avoid wiping out slides that might be hidden or cloned
             const stored = sessionStorage.getItem('revealHandwritingData');
             const data = stored ? JSON.parse(stored) : {};
 
-            // Find all canvases globally
             const allCanvases = document.querySelectorAll('.slide-notes-canvas');
 
             allCanvases.forEach(slideSvg => {
-                // Rely firmly on our absolute data-tag rather than asking Reveal for the layout index
                 let id = slideSvg.getAttribute('data-slide-id');
 
                 if (!id) {
@@ -117,6 +113,8 @@ const initHandwriting = function (Reveal) {
                     data[id] = slideSvg.innerHTML;
                 }
             });
+
+            data.hideNotes = hideNotes;
 
             sessionStorage.setItem('revealHandwritingData', JSON.stringify(data));
         } catch (e) {
@@ -149,11 +147,11 @@ const initHandwriting = function (Reveal) {
                             slideSvg.style.overflow = "visible";
                             slide.appendChild(slideSvg);
                         }
-                        // Guarantee the correct ID is tagged immediately
                         slideSvg.setAttribute('data-slide-id', id);
                         slideSvg.innerHTML = data[id];
                     }
                 });
+                hideNotes = data.hideNotes;
             }
         } catch (e) {
             console.warn("Handwriting plugin: Failed to load from sessionStorage", e);
@@ -161,12 +159,12 @@ const initHandwriting = function (Reveal) {
     }
 
     function calculateWidth(pressure, tiltX, tiltY) {
-        const baseWidth = strokeWidths[currentTool] || 3;
+        const baseWidth = strokeWidths[currentTool] || 2;
         if (currentTool === 'marker') {
             const tiltMag = Math.sqrt(tiltX * tiltX + tiltY * tiltY) / 90;
             return baseWidth * (0.4 + pressure * 0.4 + tiltMag * 0.6);
         } else {
-            return baseWidth * (0.2 + pressure * 1.5);
+            return baseWidth * (1.0 + pressure * 0.5);
         }
     }
 
@@ -293,19 +291,18 @@ const initHandwriting = function (Reveal) {
         };
     };
 
-    function toggleNotes() {
+    function toggleNotes(hideNotes) {
         if (isNotesDisabled) return;
 
-        const disabled = document.querySelector(".full-slide-svg.disable-notes");
-        if (!disabled) {
-            document.querySelectorAll(".full-slide-svg").forEach(el => {
-                if (el.style.display === 'none' && !el.classList.contains('hide-notes')) {
-                    el.style.display = 'block';
-                }
-                el.classList.toggle("hide-notes");
-            });
-        }
+        document.querySelectorAll(".full-slide-svg").forEach(el => {
+            if (el.style.display === 'none' && !el.classList.contains('hide-notes')) {
+                el.style.display = 'block';
+            }
+            el.classList.toggle("hide-notes", hideNotes);
+        });
     };
+
+
 
     Reveal.on('ready', event => {
         loadFromSessionStorage();
@@ -327,6 +324,8 @@ const initHandwriting = function (Reveal) {
 
         const existingUI = document.querySelectorAll('#notes-tool-container, #notes-delete-button-container, #notes-tool-tip, #notes-tool-menu');
         existingUI.forEach(el => el.remove());
+
+        toggleNotes(hideNotes);
 
         createNotesUI();
         createTooltipUI();
@@ -1107,8 +1106,8 @@ const initHandwriting = function (Reveal) {
         widthSlider.type = 'range';
         widthSlider.id = 'notes-stroke-width-slider';
         widthSlider.min = 1;
-        widthSlider.max = 30;
-        widthSlider.step = 1;
+        widthSlider.max = 20;
+        widthSlider.step = 0.5;
         widthSlider.value = strokeWidths[currentTool];
 
         widthSlider.addEventListener('input', (e) => {
@@ -1198,14 +1197,10 @@ const initHandwriting = function (Reveal) {
             togglenotesButton.title = 'Toggle Notes';
             togglenotesButton.innerHTML = NOTES_TOGGLE_ICON;
             togglenotesButton.onclick = () => {
-                if (showNotes) {
-                    showNotes = false;
-                    togglenotesButton.classList.remove('active');
-                } else {
-                    showNotes = true;
-                    togglenotesButton.classList.add('active');
-                }
-                toggleNotes();
+                togglenotesButton.classList.toggle('active', !hideNotes);
+                hideNotes = !hideNotes;
+                toggleNotes(hideNotes);
+                saveToSessionStorage();
             };
             container.appendChild(togglenotesButton);
         }
