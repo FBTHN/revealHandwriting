@@ -3,7 +3,7 @@
 **
 ** A plugin for reveal.js adding a handwriting canvas.
 **
-** Version: 1.3.3
+** Version: 1.3.4
 **
 ** License: MIT license
 **
@@ -60,10 +60,12 @@ const initHandwriting = function (Reveal) {
     let dragStartPos = { x: 0, y: 0 };
 
     let currentTool = 'pen';
-    let currentColor = "#325B8B";
+    let currentPenColor = "#325B8B";
+    let currentMarkerColor = "#FFF1A1";
+    // let currentColor = "#325B8B";
 
     let strokeWidths = {
-        'pen': 2,
+        'pen': 1,
         'marker': 15
     };
 
@@ -487,6 +489,23 @@ const initHandwriting = function (Reveal) {
         toolTipElement.style.display = 'none';
     }
 
+    function syncPaletteSelection() {
+        const palette = document.getElementById('notes-color-palette');
+        if (!palette) return;
+
+        const currentSelected = palette.querySelector('.selected');
+        if (currentSelected) currentSelected.classList.remove('selected');
+
+        let color;
+        if (currentTool === 'pen') {
+            color = currentPenColor;
+        } else {
+            color = currentMarkerColor;
+        }
+        const swatch = palette.querySelector(`.color-swatch[data-color="${color}"]`);
+        if (swatch) swatch.classList.add('selected');
+    }
+
     function eraseAt(x, y) {
         showTooltipIcon(x, y, ERASER_ICON_SVG, 200);
         const element = document.elementFromPoint(x, y);
@@ -686,7 +705,11 @@ const initHandwriting = function (Reveal) {
                 currentStrokeGroup = document.createElementNS(SVG_NS, "g");
                 currentStrokeGroup.setAttribute("class", "stroke-group");
                 currentStrokeGroup.style.pointerEvents = "all";
-                currentStrokeGroup.setAttribute("stroke", currentColor);
+                if (currentTool === 'pen') {
+                    currentStrokeGroup.setAttribute("stroke", currentPenColor);
+                } else {
+                    currentStrokeGroup.setAttribute("stroke", currentMarkerColor);
+                }
                 currentStrokeGroup.setAttribute("fill", "none");
                 currentStrokeGroup.setAttribute("stroke-linecap", "round");
                 currentStrokeGroup.setAttribute("stroke-linejoin", "round");
@@ -808,8 +831,12 @@ const initHandwriting = function (Reveal) {
                     dot.setAttribute("class", "dot");
                     dot.setAttribute("cx", p.x);
                     dot.setAttribute("cy", p.y);
-                    dot.setAttribute("r", width / 2);
-                    dot.setAttribute("fill", currentColor);
+                    dot.setAttribute("r", width);
+                    if (currentTool === 'pen') {
+                        dot.setAttribute("fill", currentPenColor);
+                    } else {
+                        dot.setAttribute("fill", currentMarkerColor);
+                    }
                     dot.style.pointerEvents = "all";
 
                     if (currentTool === 'marker') {
@@ -1039,7 +1066,7 @@ const initHandwriting = function (Reveal) {
             swatch.className = 'color-swatch';
             swatch.style.backgroundColor = color;
             swatch.dataset.color = color;
-            if (color === currentColor) swatch.classList.add('selected');
+            if (color === currentPenColor) swatch.classList.add('selected');
             colorPalette.appendChild(swatch);
         });
 
@@ -1048,7 +1075,11 @@ const initHandwriting = function (Reveal) {
         menu.addEventListener('click', (e) => {
             const swatch = e.target.closest('.color-swatch');
             if (swatch) {
-                currentColor = swatch.dataset.color;
+                if (currentTool === 'pen') {
+                    currentPenColor = swatch.dataset.color;
+                } else {
+                    currentMarkerColor = swatch.dataset.color;
+                }
 
                 if (currentTool !== 'pen' && currentTool !== 'marker') {
                     setTool('pen');
@@ -1121,6 +1152,10 @@ const initHandwriting = function (Reveal) {
                 } else {
                     menu.classList.remove('active');
                     setTool(id);
+                }
+
+                if (id === 'pen' || id === 'marker') {
+                    syncPaletteSelection();
                 }
 
                 const slider = document.getElementById('notes-stroke-width-slider');
