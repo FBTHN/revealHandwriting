@@ -1197,7 +1197,7 @@ const initHandwriting = function (Reveal) {
             togglenotesButton.title = 'Toggle Notes';
             togglenotesButton.innerHTML = NOTES_TOGGLE_ICON;
             togglenotesButton.onclick = () => {
-                togglenotesButton.classList.toggle('active', !hideNotes);
+                togglenotesButton.classList.toggle('active', hideNotes);
                 hideNotes = !hideNotes;
                 toggleNotes(hideNotes);
                 saveToSessionStorage();
