@@ -730,6 +730,25 @@ const initHandwriting = function (Reveal) {
             }
         }, { passive: false });
 
+        document.addEventListener('pointerdown', (e) => {
+            // Event listener to close notes-ui when touching screen somewhere
+            if (e.pointerType !== 'touch') {
+                return;
+            }
+
+            const menu = document.getElementById('notes-tool-menu');
+            const container = document.getElementById('notes-tool-container');
+
+            // Only run if the menu actually exists and is currently open
+            if (menu && menu.classList.contains('active')) {
+
+                // Check if the touched element is outside the menu and outside the main toolbar
+                if (!menu.contains(e.target) && !container.contains(e.target)) {
+                    menu.classList.remove('active');
+                }
+            }
+        });
+
         window.addEventListener('pointermove', (e) => {
             if (e.pointerType !== 'pen' || !penSession || e.buttons === 0 && !e.altKey) return;
             if (e.target.closest('#notes-tool-container, #notes-delete-button-container, #notes-tool-menu')) return;
