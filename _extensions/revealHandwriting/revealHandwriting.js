@@ -3,7 +3,7 @@
 **
 ** A plugin for reveal.js adding a handwriting canvas.
 **
-** Version: 1.3.5
+** Version: 1.4.0
 **
 ** License: MIT license
 **
@@ -343,18 +343,6 @@ const initHandwriting = function (Reveal) {
         Reveal.on('slidechanged', updateActiveSlideGroup);
         updateActiveSlideGroup();
 
-        // Exit export mode button
-        const exitBtn = document.createElement('div');
-        exitBtn.id = 'exit-export-mode-btn';
-        exitBtn.title = "Return to Presentation Mode";
-        exitBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>';
-
-        exitBtn.addEventListener('click', () => {
-            const eKey = new KeyboardEvent('keydown', { key: 'e', keyCode: 69, bubbles: true });
-            document.dispatchEvent(eKey);
-        });
-
-        document.body.appendChild(exitBtn);
     });
 
     function updateActiveSlideGroup() {
@@ -416,16 +404,6 @@ const initHandwriting = function (Reveal) {
         if (svg) svg.style.pointerEvents = "none";
     }
 
-    async function fetchAsDataURL(url) {
-        const response = await fetch(url);
-        const blob = await response.blob();
-
-        return new Promise(resolve => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.readAsDataURL(blob);
-        });
-    }
 
     function setCursorNone() {
         const reveal = document.querySelector(".reveal");
@@ -912,29 +890,25 @@ const initHandwriting = function (Reveal) {
         document.body.appendChild(toolTipElement);
     }
 
-    async function saveSlidesAsHTML() {
+    function saveSlidesAsHTML() {
         const saveButton = document.querySelector('.notes-ui-button[title="Save Slides with Notes"]');
         const originalButtonContent = saveButton.innerHTML;
         saveButton.innerHTML = '...';
         saveButton.disabled = true;
 
         try {
+            // Ensure latest strokes and selections are processed
             clearSelection();
             requestSave();
 
+            // Close color/width menu if open, so it doesn't stay stuck open in the downloaded file
             const menu = document.getElementById('notes-tool-menu');
             if (menu) menu.classList.remove('active');
 
-            const uiElements = [
-                document.getElementById('notes-tool-container'),
-                document.getElementById('notes-delete-button-container'),
-                document.getElementById('notes-tool-tip'),
-                document.getElementById('notes-tool-menu')
-            ];
-            uiElements.forEach(el => el && (el.style.display = 'none'));
-
+            // Clone the document
             const docClone = document.documentElement.cloneNode(true);
 
+            // Clean up Reveal.js dynamic inline styles/classes so the static HTML loads cleanly when opened again
             const cleanElements = docClone.querySelectorAll('.reveal, .reveal .slides, .reveal .slides section');
             cleanElements.forEach(el => {
                 el.style.removeProperty('transform');
@@ -947,96 +921,27 @@ const initHandwriting = function (Reveal) {
                 el.classList.remove('present', 'past', 'future');
             });
 
-            const generatedBackgrounds = docClone.querySelectorAll('.backgrounds, .slide-backgrounds, .speaker-notes, .pause-overlay, .progress, .controls');
+            // Remove reveal backgrounds generated on the fly AND custom injected footers 
+            // to prevent duplication on reload
+            const generatedBackgrounds = docClone.querySelectorAll('.backgrounds, .slide-backgrounds, .speaker-notes, .pause-overlay, .progress, .controls, .slide-logo, .slide-footer');
             generatedBackgrounds.forEach(el => el.remove());
 
+            // Make sure all handwriting canvases are visible
             const allDrawingsInClone = docClone.querySelectorAll('.slide-notes-canvas');
             allDrawingsInClone.forEach(g => g.style.display = 'block');
 
-            const imgElements = docClone.querySelectorAll('img');
-            for (const img of imgElements) {
-                if (!img.src.startsWith('data:')) {
-                    const abs = new URL(img.src, document.baseURI).href;
-                    try {
-                        img.src = await fetchAsDataURL(abs);
-                    } catch (err) {
-                        console.warn("Could not embed image:", abs);
-                    }
-                }
-            }
-
-            const linkElements = docClone.querySelectorAll('link[rel="stylesheet"]');
-            for (const link of linkElements) {
-                const href = new URL(link.href, document.baseURI).href;
-                try {
-                    const response = await fetch(href);
-                    if (response.ok) {
-                        const cssText = await response.text();
-                        const styleElement = document.createElement('style');
-
-                        styleElement.textContent = cssText;
-                        styleElement.dataset.sourceHref = href;
-
-                        link.parentNode.replaceChild(styleElement, link);
-                    }
-                } catch (e) {
-                    console.warn(e);
-                }
-            }
-
-            const styleElements = docClone.querySelectorAll('style');
-            for (const style of styleElements) {
-                let css = style.textContent;
-                const baseHref = style.dataset.sourceHref || document.baseURI;
-
-                const urlRegex = /url\(["']?([^"')]+)["']?\)/g;
-                const matches = [...css.matchAll(urlRegex)];
-
-                for (const match of matches) {
-                    const originalUrl = match[1];
-
-                    if (!originalUrl.startsWith('data:')) {
-                        try {
-                            const abs = new URL(originalUrl, baseHref).href;
-                            const dataUrl = await fetchAsDataURL(abs);
-                            css = css.replaceAll(originalUrl, dataUrl);
-                        } catch (err) {
-                            console.warn("Could not embed css background:", originalUrl);
-                        }
-                    }
-                }
-
-                style.textContent = css;
-            }
-
-            const scriptElements = docClone.querySelectorAll('script[src]');
-            for (const script of scriptElements) {
-                const src = new URL(script.src, document.baseURI).href;
-                try {
-                    const response = await fetch(src);
-                    if (response.ok) {
-                        const jsText = await response.text();
-                        const newScript = document.createElement('script');
-                        newScript.textContent = jsText;
-                        if (script.type) newScript.type = script.type;
-                        script.parentNode.replaceChild(newScript, script);
-                    }
-                } catch (e) { console.warn(e); }
-            }
-
+            // Generate filename based on meta tag and current date
             const now = new Date();
             const dateStr = now.toISOString().slice(0, 10);
-
             const metaTag = document.querySelector('meta[name="lecture-title"]');
             const filePrefix = metaTag ? metaTag.getAttribute('content') : 'presentation';
-
             const finalFilename = `${filePrefix}_${dateStr}.html`;
 
+            // Create Blob and trigger download
             const html = '<!DOCTYPE html>\n' + docClone.outerHTML;
-            const blob = new Blob([html], { type: 'text/html' });
+            const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-
             a.download = finalFilename;
             document.body.appendChild(a);
             a.click();
@@ -1047,16 +952,11 @@ const initHandwriting = function (Reveal) {
             console.error("Failed to save:", error);
             alert("Error saving presentation.");
         } finally {
-            const uiElements = [
-                document.getElementById('notes-tool-container'),
-                document.getElementById('notes-delete-button-container'),
-                document.getElementById('notes-tool-tip'),
-                document.getElementById('notes-tool-menu')
-            ];
-            uiElements.forEach(el => el && (el.style.display = ''));
-            updateActiveSlideGroup();
-            saveButton.innerHTML = originalButtonContent;
-            saveButton.disabled = false;
+            // Restore save button state
+            if (saveButton) {
+                saveButton.innerHTML = originalButtonContent;
+                saveButton.disabled = false;
+            }
         }
     }
 
@@ -1140,6 +1040,7 @@ const initHandwriting = function (Reveal) {
         menu.appendChild(widthSection);
         document.body.appendChild(menu);
 
+        /*
         const currentToolBtn = document.createElement('div');
         currentToolBtn.id = 'notes-current-tool-btn';
         currentToolBtn.className = 'notes-ui-button';
@@ -1151,6 +1052,7 @@ const initHandwriting = function (Reveal) {
             menuEl.classList.toggle('active');
         };
         container.appendChild(currentToolBtn);
+        */
 
         const createToolBtn = (id, icon, title) => {
             const btn = document.createElement('div');
@@ -1196,7 +1098,7 @@ const initHandwriting = function (Reveal) {
         container.appendChild(divider);
 
         const fullscreenButton = document.createElement('div');
-        fullscreenButton.className = 'notes-ui-button';
+        fullscreenButton.className = 'notes-ui-button notes-ui-toggle-btn';
         fullscreenButton.title = 'Toggle Fullscreen';
         fullscreenButton.innerHTML = FULLSCREEN_ICON;
         fullscreenButton.onclick = () => {
@@ -1204,8 +1106,10 @@ const initHandwriting = function (Reveal) {
                 document.documentElement.requestFullscreen().catch(err => {
                     alert(`Error: ${err.message}`);
                 });
+                fullscreenButton.classList.add('active');
             } else {
                 document.exitFullscreen();
+                fullscreenButton.classList.remove('active');
             }
         };
         container.appendChild(fullscreenButton);

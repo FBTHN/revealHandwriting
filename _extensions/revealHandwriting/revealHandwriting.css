@@ -10,6 +10,7 @@
     position: fixed;
     bottom: var(--notes-bottom);
     left: var(--notes-left);
+    gap: var(--notes-gap);
     z-index: 1001;
     display: flex;
     flex-direction: row;
@@ -19,33 +20,17 @@
     border-radius: 50px;
     padding: 4px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    transition: all 0.3s ease-in-out;
 }
 
 .print-pdf #notes-tool-container {
     display: none !important;
 }
 
-#notes-tool-container>*:not(:first-child) {
-    opacity: 0;
-    max-width: 0;
-    margin-left: 0;
-    overflow: hidden;
-    transition: max-width 0.25s ease, opacity 0.2s ease, margin-left 0.25s ease;
-    white-space: nowrap;
-}
-
-#notes-tool-container:hover>*:not(:first-child) {
-    opacity: 1;
-    max-width: var(--notes-button-size);
-    margin-left: var(--notes-gap);
-}
-
 .notes-toolbar-divider {
-    width: 1px;
-    height: 18px;
+    margin: 2px;
+    width: 2px;
+    height: 24px;
     background: #ced4da;
-    transition: opacity 0.3s ease;
 }
 
 .notes-ui-button {
@@ -218,49 +203,4 @@
 
 .selected-stroke {
     transition: opacity 0.2s;
-}
-
-#exit-export-mode-btn {
-    position: fixed;
-    top: 1vh;
-    left: 1vw;
-    width: 4vh;
-    height: 4vh;
-    background: #fff;
-    color: #495057ff;
-    border: 1px solid #dee2e6;
-    border-radius: 50%;
-    cursor: pointer;
-    z-index: 999999;
-    display: none;
-    /* Hidden by default */
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    transition: all 0.2s ease;
-}
-
-#exit-export-mode-btn:hover {
-    background: #e0e0e0;
-    color: #495057ff;
-    transform: scale(1.05);
-}
-
-#exit-export-mode-btn svg {
-    width: 80%;
-    height: 80%;
-    fill: currentColor;
-}
-
-/* Show the button ONLY when Reveal.js is in export mode */
-.print-pdf #exit-export-mode-btn,
-body.reveal-print #exit-export-mode-btn {
-    display: flex;
-}
-
-/* Hide the button when the user actually opens the print dialogue */
-@media print {
-    #exit-export-mode-btn {
-        display: none !important;
-    }
 }
