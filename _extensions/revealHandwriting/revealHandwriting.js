@@ -3,7 +3,7 @@
 **
 ** A plugin for reveal.js adding a handwriting canvas.
 **
-** Version: 1.4.0
+** Version: 1.4.1
 **
 ** License: MIT license
 **
@@ -330,6 +330,8 @@ const initHandwriting = function (Reveal) {
         createNotesUI();
         createTooltipUI();
         setupPenEvents();
+
+
 
         window.addEventListener("pointermove", (e) => {
             if (
@@ -848,7 +850,7 @@ const initHandwriting = function (Reveal) {
                         for (let i = 0; i < pendingPoints.length; i++) currentPoints.push(pendingPoints[i]);
                     }
 
-                    const smoothedPoints = applyLightSmoothingToPoints(currentPoints, 3);
+                    const smoothedPoints = applyLightSmoothingToPoints(currentPoints, 2);
                     currentStrokeGroup.innerHTML = '';
 
                     let drawIdx = 0;
@@ -1119,6 +1121,7 @@ const initHandwriting = function (Reveal) {
             togglenotesButton.className = 'notes-ui-button notes-ui-toggle-btn';
             togglenotesButton.title = 'Toggle Notes';
             togglenotesButton.innerHTML = NOTES_TOGGLE_ICON;
+            togglenotesButton.classList.toggle('active', !hideNotes);
             togglenotesButton.onclick = () => {
                 togglenotesButton.classList.toggle('active', hideNotes);
                 hideNotes = !hideNotes;
