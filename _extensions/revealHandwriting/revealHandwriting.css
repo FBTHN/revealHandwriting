@@ -204,3 +204,20 @@
 .selected-stroke {
     transition: opacity 0.2s;
 }
+
+.reveal video {
+    position: relative;
+    z-index: 47;
+}
+
+.reveal .video-js {
+    position: relative !important;
+    z-index: 48 !important;
+    pointer-events: auto !important;
+}
+
+
+.reveal .video-js * {
+    pointer-events: auto !important;
+    z-index: 49 !important;
+}
