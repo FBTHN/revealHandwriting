@@ -719,7 +719,7 @@ const initHandwriting = function (Reveal) {
             isLassoing = false;
 
             const isEraserButton = (e.buttons & 32);
-            const isLassoButton = e.altKey;
+            const isLassoButton = (e.buttons & 2);
 
             if (currentTool === 'eraser' || isEraserButton) {
                 isErasing = true;
@@ -1329,12 +1329,12 @@ const initHandwriting = function (Reveal) {
         widthSlider.type = 'range';
         widthSlider.id = 'notes-stroke-width-slider';
         widthSlider.min = 1;
-        widthSlider.max = 20;
+        widthSlider.max = 10;
         widthSlider.step = 0.5;
         widthSlider.value = strokeWidths[currentTool];
 
         widthSlider.addEventListener('input', (e) => {
-            const val = parseInt(e.target.value, 10);
+            const val = parseFloat(e.target.value);
             if (currentTool === 'line' || currentTool === 'pen' || currentTool === 'circle') {
                 strokeWidths['pen'] = val;
                 strokeWidths['line'] = val;
