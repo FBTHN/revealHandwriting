@@ -3,7 +3,7 @@
 **
 ** A plugin for reveal.js adding a handwriting canvas.
 **
-** Version: 1.6.0
+** Version: 1.6.1
 **
 ** License: MIT license
 **
@@ -122,6 +122,7 @@ const initHandwriting = function (Reveal) {
     const RECTANGLE_ICON_SVG = `<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" fill="none" stroke="#000000" stroke-width="2"/><circle cx="4" cy="6" r="1.5" fill="#000000"/><circle cx="20" cy="18" r="1.5" fill="#000000"/></svg>`;
     const CIRCLE_ICON_SVG = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="#000000" stroke-width="2"/><circle cx="12" cy="12" r="1.5" fill="#000000"/></svg>`;
     const ARC_ICON_SVG = `<svg viewBox="0 0 24 24"><path d="M20 12 A8 8 0 0 0 12 4" fill="none" stroke="#000000" stroke-width="2"/><circle cx="12" cy="12" r="1.5" fill="#000000"/></svg>`;
+    const IMAGE_ICON_SVG = `<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="#495057" stroke-width="1.8"/><circle cx="8.5" cy="9" r="1.5" fill="#495057"/><path d="m5 17 5-5 3 3 2-2 4 4" fill="none" stroke="#495057" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
     const SAVE_ICON = `<svg viewBox="0 0 24 24"><path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zM15 9H5V5h10v4z"/></svg>`;
     const UNDO_ICON = `<svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5v3h4a7 7 0 0 1 0 14h-1v-2h1a5 5 0 0 0 0-10H9v5z"/></svg>`;
     const SVG_NS = "http://www.w3.org/2000/svg";
@@ -1065,30 +1066,17 @@ const initHandwriting = function (Reveal) {
         return true;
     }
 
-    function pasteClipboardImage(event) {
-        if (!event.clipboardData || !event.clipboardData.items) return;
-        const target = event.target instanceof Element ? event.target : null;
-        if (target && (target.closest('input, textarea, select') || target.isContentEditable)) return;
-
-        const imageItem = Array.from(event.clipboardData.items).find(item =>
-            item.type === 'image/png' || item.type === 'image/jpeg'
-        );
-        if (!imageItem) return;
-
-        const file = imageItem.getAsFile();
-        if (!file) return;
-        event.preventDefault();
-
+    function insertClipboardImageFile(file) {
         const reader = new FileReader();
-        reader.onerror = () => window.alert('The clipboard image could not be read.');
+        reader.onerror = () => window.alert('The image file could not be read.');
         reader.onload = () => {
             if (typeof reader.result !== 'string') {
-                window.alert('The clipboard image could not be read.');
+                window.alert('The image file could not be read.');
                 return;
             }
 
             const image = new Image();
-            image.onerror = () => window.alert('The clipboard image could not be decoded.');
+            image.onerror = () => window.alert('The selected image could not be decoded.');
             image.onload = () => {
                 updateActiveSlideGroup();
                 if (!svg || !currentSlideGroup) return;
@@ -1105,8 +1093,9 @@ const initHandwriting = function (Reveal) {
                 const group = document.createElementNS(SVG_NS, 'g');
                 group.setAttribute('class', 'pasted-image');
                 group.setAttribute('data-image-id', `pasted-image-${Date.now()}-${++pastedImageCounter}`);
-                group.setAttribute('data-center-x', svg.clientWidth / 2);
-                group.setAttribute('data-center-y', svg.clientHeight / 2);
+                const screenCenter = getPointInSvg(window.innerWidth / 2, window.innerHeight / 2);
+                group.setAttribute('data-center-x', screenCenter.x);
+                group.setAttribute('data-center-y', screenCenter.y);
                 group.setAttribute('data-image-width', width);
                 group.setAttribute('data-image-height', height);
                 group.setAttribute('data-rotation', '0');
@@ -1131,6 +1120,22 @@ const initHandwriting = function (Reveal) {
             image.src = reader.result;
         };
         reader.readAsDataURL(file);
+    }
+
+    function pasteClipboardImage(event) {
+        if (!event.clipboardData || !event.clipboardData.items) return;
+        const target = event.target instanceof Element ? event.target : null;
+        if (target && (target.closest('input, textarea, select') || target.isContentEditable)) return;
+
+        const imageItem = Array.from(event.clipboardData.items).find(item =>
+            item.type === 'image/png' || item.type === 'image/jpeg'
+        );
+        if (!imageItem) return;
+
+        const file = imageItem.getAsFile();
+        if (!file) return;
+        event.preventDefault();
+        insertClipboardImageFile(file);
     }
 
     function setupPenEvents() {
@@ -2180,6 +2185,28 @@ const initHandwriting = function (Reveal) {
         undoButton.disabled = true;
         undoButton.addEventListener('click', undoLastAction);
         container.appendChild(undoButton);
+
+        const imageFileInput = document.createElement('input');
+        imageFileInput.type = 'file';
+        imageFileInput.accept = 'image/*';
+        imageFileInput.setAttribute('aria-label', 'Choose image from storage');
+        imageFileInput.style.display = 'none';
+        imageFileInput.addEventListener('change', () => {
+            const file = imageFileInput.files && imageFileInput.files[0];
+            if (file) insertClipboardImageFile(file);
+            imageFileInput.value = '';
+        });
+        document.body.appendChild(imageFileInput);
+
+        const addImageButton = document.createElement('button');
+        addImageButton.type = 'button';
+        addImageButton.id = 'notes-add-image-button';
+        addImageButton.className = 'notes-ui-button';
+        addImageButton.title = 'Add image from storage';
+        addImageButton.setAttribute('aria-label', addImageButton.title);
+        addImageButton.innerHTML = IMAGE_ICON_SVG;
+        addImageButton.addEventListener('click', () => imageFileInput.click());
+        container.appendChild(addImageButton);
 
         const saveButton = document.createElement('div');
         saveButton.className = 'notes-ui-button';
