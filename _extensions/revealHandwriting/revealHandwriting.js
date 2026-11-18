@@ -3,7 +3,7 @@
 **
 ** A plugin for reveal.js adding a handwriting canvas.
 **
-** Version: 1.6.0
+** Version: 1.6.1
 **
 ** License: MIT license
 **
@@ -122,6 +122,7 @@ const initHandwriting = function (Reveal) {
     const RECTANGLE_ICON_SVG = `<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" fill="none" stroke="#000000" stroke-width="2"/><circle cx="4" cy="6" r="1.5" fill="#000000"/><circle cx="20" cy="18" r="1.5" fill="#000000"/></svg>`;
     const CIRCLE_ICON_SVG = `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="#000000" stroke-width="2"/><circle cx="12" cy="12" r="1.5" fill="#000000"/></svg>`;
     const ARC_ICON_SVG = `<svg viewBox="0 0 24 24"><path d="M20 12 A8 8 0 0 0 12 4" fill="none" stroke="#000000" stroke-width="2"/><circle cx="12" cy="12" r="1.5" fill="#000000"/></svg>`;
+    const PASTE_ICON_SVG = `<svg viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14H4V6a2 2 0 0 1 2-2h2m1-1h6v4H9zM8 13h8m-4-4v8" fill="none" stroke="#495057" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
     const SAVE_ICON = `<svg viewBox="0 0 24 24"><path d="M17 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7l-4-4zm-5 16a3 3 0 1 1 0-6 3 3 0 0 1 0 6zM15 9H5V5h10v4z"/></svg>`;
     const UNDO_ICON = `<svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5v3h4a7 7 0 0 1 0 14h-1v-2h1a5 5 0 0 0 0-10H9v5z"/></svg>`;
     const SVG_NS = "http://www.w3.org/2000/svg";
@@ -1065,20 +1066,7 @@ const initHandwriting = function (Reveal) {
         return true;
     }
 
-    function pasteClipboardImage(event) {
-        if (!event.clipboardData || !event.clipboardData.items) return;
-        const target = event.target instanceof Element ? event.target : null;
-        if (target && (target.closest('input, textarea, select') || target.isContentEditable)) return;
-
-        const imageItem = Array.from(event.clipboardData.items).find(item =>
-            item.type === 'image/png' || item.type === 'image/jpeg'
-        );
-        if (!imageItem) return;
-
-        const file = imageItem.getAsFile();
-        if (!file) return;
-        event.preventDefault();
-
+    function insertClipboardImageFile(file) {
         const reader = new FileReader();
         reader.onerror = () => window.alert('The clipboard image could not be read.');
         reader.onload = () => {
@@ -1105,8 +1093,9 @@ const initHandwriting = function (Reveal) {
                 const group = document.createElementNS(SVG_NS, 'g');
                 group.setAttribute('class', 'pasted-image');
                 group.setAttribute('data-image-id', `pasted-image-${Date.now()}-${++pastedImageCounter}`);
-                group.setAttribute('data-center-x', svg.clientWidth / 2);
-                group.setAttribute('data-center-y', svg.clientHeight / 2);
+                const screenCenter = getPointInSvg(window.innerWidth / 2, window.innerHeight / 2);
+                group.setAttribute('data-center-x', screenCenter.x);
+                group.setAttribute('data-center-y', screenCenter.y);
                 group.setAttribute('data-image-width', width);
                 group.setAttribute('data-image-height', height);
                 group.setAttribute('data-rotation', '0');
@@ -1131,6 +1120,44 @@ const initHandwriting = function (Reveal) {
             image.src = reader.result;
         };
         reader.readAsDataURL(file);
+    }
+
+    function pasteClipboardImage(event) {
+        if (!event.clipboardData || !event.clipboardData.items) return;
+        const target = event.target instanceof Element ? event.target : null;
+        if (target && (target.closest('input, textarea, select') || target.isContentEditable)) return;
+
+        const imageItem = Array.from(event.clipboardData.items).find(item =>
+            item.type === 'image/png' || item.type === 'image/jpeg'
+        );
+        if (!imageItem) return;
+
+        const file = imageItem.getAsFile();
+        if (!file) return;
+        event.preventDefault();
+        insertClipboardImageFile(file);
+    }
+
+    async function pasteImageFromClipboard() {
+        if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
+            window.alert('Clipboard image access is not available in this browser or page context.');
+            return;
+        }
+
+        try {
+            const clipboardItems = await navigator.clipboard.read();
+            for (const item of clipboardItems) {
+                const imageType = item.types.find(type => type === 'image/png' || type === 'image/jpeg');
+                if (imageType) {
+                    insertClipboardImageFile(await item.getType(imageType));
+                    return;
+                }
+            }
+            window.alert('The clipboard does not contain a PNG or JPEG image.');
+        } catch (error) {
+            console.warn('Handwriting plugin: Clipboard image access failed', error);
+            window.alert('Could not access an image on the clipboard. Check the browser permission and try again.');
+        }
     }
 
     function setupPenEvents() {
@@ -2180,6 +2207,16 @@ const initHandwriting = function (Reveal) {
         undoButton.disabled = true;
         undoButton.addEventListener('click', undoLastAction);
         container.appendChild(undoButton);
+
+        const pasteImageButton = document.createElement('button');
+        pasteImageButton.type = 'button';
+        pasteImageButton.id = 'notes-paste-image-button';
+        pasteImageButton.className = 'notes-ui-button';
+        pasteImageButton.title = 'Paste image from clipboard';
+        pasteImageButton.setAttribute('aria-label', pasteImageButton.title);
+        pasteImageButton.innerHTML = PASTE_ICON_SVG;
+        pasteImageButton.addEventListener('click', pasteImageFromClipboard);
+        container.appendChild(pasteImageButton);
 
         const saveButton = document.createElement('div');
         saveButton.className = 'notes-ui-button';
