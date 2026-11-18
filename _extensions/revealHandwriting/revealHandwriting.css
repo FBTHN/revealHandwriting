@@ -26,13 +26,6 @@
     display: none !important;
 }
 
-.notes-toolbar-divider {
-    margin: 2px;
-    width: 2px;
-    height: 24px;
-    background: #ced4da;
-}
-
 .notes-ui-button {
     width: var(--notes-button-size);
     height: var(--notes-button-size);
@@ -52,6 +45,19 @@
     background-color: #e9ecef;
 }
 
+#notes-undo-button {
+    padding: 0;
+}
+
+#notes-undo-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+#notes-undo-button:disabled:hover {
+    background-color: #f8f9fa;
+}
+
 .notes-ui-button svg {
     width: var(--notes-icon-size);
     height: var(--notes-icon-size);
@@ -64,15 +70,6 @@
 }
 
 .notes-tool-select-btn.active svg {
-    fill: #ffffff;
-}
-
-.notes-ui-toggle-btn.active {
-    background-color: #325B8B;
-    border-color: #325B8B;
-}
-
-.notes-ui-toggle-btn.active svg {
     fill: #ffffff;
 }
 
@@ -98,7 +95,8 @@
     margin-bottom: 12px;
 }
 
-.notes-tool-section h4 {
+.notes-tool-section h4,
+#polygon-fill-palette h4 {
     margin: 0 0 8px 0;
     font-size: 14px;
     color: #212529;
@@ -132,6 +130,44 @@
     background: #ffffff;
     overflow: hidden;
     border-radius: 16px;
+}
+
+#notes-line-style-buttons {
+    display: flex;
+    width: max-content;
+    gap: 6px;
+}
+
+.line-style-button {
+    width: 42px;
+    height: 32px;
+    padding: 5px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    background: #f8f9fa;
+    color: #495057;
+    cursor: pointer;
+}
+
+.line-style-button:hover {
+    background: #e9ecef;
+}
+
+.line-style-button.active {
+    border-color: #325B8B;
+    background: #325B8B;
+    color: #fff;
+}
+
+.line-style-button svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.line-style-button:focus-visible {
+    outline: 2px solid #325B8B;
+    outline-offset: 2px;
 }
 
 #notes-stroke-width-slider::-webkit-slider-thumb {
@@ -203,6 +239,23 @@
 
 .selected-stroke {
     transition: opacity 0.2s;
+}
+
+.slide-notes-canvas image.pasted-image-content,
+.pasted-image-control-handle {
+    touch-action: none;
+}
+
+.slide-notes-canvas image.pasted-image-content {
+    cursor: move;
+}
+
+.pasted-image-control-handle[data-image-action="resize"] {
+    cursor: nwse-resize;
+}
+
+.pasted-image-control-handle[data-image-action="rotate"] {
+    cursor: grab;
 }
 
 .reveal video {
