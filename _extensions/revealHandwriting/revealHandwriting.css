@@ -250,6 +250,10 @@
     cursor: move;
 }
 
+.reveal.pen-pointer-active .slide-notes-canvas image.pasted-image-content {
+    cursor: none;
+}
+
 .pasted-image-control-handle[data-image-action="resize"] {
     cursor: nwse-resize;
 }
